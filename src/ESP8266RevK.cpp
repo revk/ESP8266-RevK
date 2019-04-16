@@ -22,20 +22,21 @@
 
 #include <ESP8266httpUpdate.h>
 
-void		ESP8266RevK:: upgrade(const byte * message, size_t len)
+static const char *appname=NULL;
+static const char *firmware="excalibur.bec.aa.net.uk";
+
+void	upgrade(const byte * message, size_t len)
 {
 	char		url       [200];
 	snprintf(url, sizeof(url), "/%s.ino." BOARD ".bin", appname);
-	pub("stat", "upgrade", "Upgrade from http://%s%s", firmware, url);
 	WiFiClient	client;
 	if (ESPhttpUpdate.update(client, firmware, 80, url)) {
 		Serial.println(ESPhttpUpdate.getLastErrorString());
-		pub("error", "upgrade", "%s", ESPhttpUpdate.getLastErrorString().c_str());
 	}
 	delay(1000);
 }
 
-void		ESP8266RevK::message(const char *topic, byte * payload, unsigned int len)
+static void		message(const char *topic, byte * payload, unsigned int len)
 {
 	char           *p = strchr(topic, '/');
 	if (!p)
@@ -54,14 +55,12 @@ void		ESP8266RevK::message(const char *topic, byte * payload, unsigned int len)
 		return;
 		/* Yeh, would not get here. */
 	}
-	callback(prefix, p, payload, len);
+	app_mqtt(prefix,p,payload,len);
 }
 
-ESP8266RevK::ESP8266RevK(const char *appname, void (*rawcallback)(char*, uint8_t*, unsigned int),void (*callback) (const char *prefix, const char *suffix, const byte * message, size_t len))
+ESP8266RevK::ESP8266RevK(const char *myappname)
 {
-	if (appname && *appname)
-		strncpy(this->appname, appname, sizeof(this->appname));
-	this->callback = callback;
+	appname=myappname;
 	if (!*hostname)
 		snprintf(hostname, sizeof(hostname), "%06X", ESP.getChipId());
 	if (!*wifissid)
@@ -70,8 +69,6 @@ ESP8266RevK::ESP8266RevK(const char *appname, void (*rawcallback)(char*, uint8_t
 		strncpy(wifipass, "security", sizeof(wifipass));
 	if (!*mqtthost)
 		strncpy(mqtthost, "mqtt.iot", sizeof(mqtthost));
-	if (!*firmware)
-		strncpy(firmware, "excalibur.bec.aa.net.uk", sizeof(firmware));
 	WiFi.hostname(hostname);
 	WiFi.mode(WIFI_STA);
 	WiFi.begin(wifissid, wifipass);
@@ -80,7 +77,7 @@ ESP8266RevK::ESP8266RevK(const char *appname, void (*rawcallback)(char*, uint8_t
 		mqtt=PubSubClient();
 		mqtt.setClient(mqttclient);
 		mqtt.setServer(mqtthost, mqttport);
-		mqtt.setCallback(rawcallback);
+		mqtt.setCallback(message);
 	}
 }
 
@@ -121,4 +118,19 @@ void		ESP8266RevK::pub(const char *prefix, const char *suffix, const char *fmt,.
 	char		topic     [101];
 	snprintf(topic, sizeof(topic), "%s/%s/%s/%s", prefix, appname, hostname, suffix);
 	mqtt.publish(topic, temp);
+}
+
+void start_setting()
+{        // Store settings in EEPROM
+ // TODO
+}
+
+void add_setting(const char *name,const char*value)
+{
+ // TODO
+}
+
+void end_setting()
+{
+ // TODO
 }
