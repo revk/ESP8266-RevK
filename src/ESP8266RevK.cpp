@@ -27,6 +27,7 @@ static const char *firmware="excalibur.bec.aa.net.uk";
 
 void	upgrade(const byte * message, size_t len)
 {
+	delay(1000);	// Allow clean MQTT
 	char		url       [200];
 	snprintf(url, sizeof(url), "/%s.ino." BOARD ".bin", appname);
 	WiFiClient	client;
