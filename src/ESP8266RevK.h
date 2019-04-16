@@ -14,11 +14,11 @@ class ESP8266RevK : private PubSubClient {
    // Your rawcallback can just call message to do the callback and handle upgrades
    void message(const char* topic, byte* payload, unsigned int len);
    void loop(void);
-   void pub(const char *prefix, const char *suffix, const char *fmt, ...);
+   void pub(const char *prefix, const char *suffix, const char *fmt=NULL, ...);
    void (*callback)(const char *prefix, const char*suffix, const byte *message, size_t len);
 
-   char appname[33];	// Name of app and part of topic
-   char hostname[33];	// Unique name of host and part of hostname and topic with appname
+   char appname[33];	// Name of app
+   char hostname[33];	// Unique ID of host (default is chipid)
    char wifissid[33];	// WiFi SSID
    char wifipass[33];	// WiFi Password
    char mqtthost[129];	// MQTT hostname/IP

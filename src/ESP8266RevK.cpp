@@ -2,9 +2,11 @@
  * This is a wrapper for a number of common applications It provides the
  * basic common aspects - connnection to WiFi and MQTT
  * 
- * TODO :- Add functions for app to set these and store in EEPROM
+ * TODO :-
+ * Add functions for app to set these and store in EEPROM
  * Add fall back SSID
  * Add fall back MQTT Add option for TLS MQTT
+ * Online/offline (will)
  * 
  * There are a number of default / key settings which can be overridden in the
  * info.h file
@@ -24,12 +26,13 @@ void		ESP8266RevK:: upgrade(const byte * message, size_t len)
 {
 	char		url       [200];
 	snprintf(url, sizeof(url), "/%s.ino." BOARD ".bin", appname);
-	pub("stat", "upgrade", "Upgrade " __TIME__ " http://%s%s", firmware, url);
+	pub("stat", "upgrade", "Upgrade from http://%s%s", firmware, url);
 	WiFiClient	client;
 	if (ESPhttpUpdate.update(client, firmware, 80, url)) {
 		Serial.println(ESPhttpUpdate.getLastErrorString());
 		pub("error", "upgrade", "%s", ESPhttpUpdate.getLastErrorString().c_str());
 	}
+	delay(1000);
 }
 
 void		ESP8266RevK::message(const char *topic, byte * payload, unsigned int len)
@@ -69,32 +72,34 @@ ESP8266RevK::ESP8266RevK(const char *appname, void (*rawcallback)(char*, uint8_t
 		strncpy(mqtthost, "mqtt.iot", sizeof(mqtthost));
 	if (!*firmware)
 		strncpy(firmware, "excalibur.bec.aa.net.uk", sizeof(firmware));
-	char		host      [129];
-	snprintf(host, sizeof(host), "%s-%s", appname, hostname);
-	WiFi.hostname(host);
+	WiFi.hostname(hostname);
 	WiFi.mode(WIFI_STA);
 	WiFi.begin(wifissid, wifipass);
-	mqtt=PubSubClient();
-	mqtt.setClient(mqttclient);
-	mqtt.setServer(mqtthost, mqttport);
-	mqtt.setCallback(rawcallback);
+	if(*mqtthost)
+	{
+		mqtt=PubSubClient();
+		mqtt.setClient(mqttclient);
+		mqtt.setServer(mqtthost, mqttport);
+		mqtt.setCallback(rawcallback);
+	}
 }
 
 void		ESP8266RevK::loop()
 {
 	/* MQTT reconnnect */
-	if (!mqtt.loop() && mqttretry < millis()) {
-		if (mqtt.connect(hostname, mqttuser, mqttpass)) {
+	if (*mqtthost&&!mqtt.loop() && mqttretry < millis()) {
+		char topic[101];
+		snprintf(topic, sizeof(topic), "tele/%s/%s/LWT", appname, hostname);
+		if (mqtt.connect(hostname, mqttuser, mqttpass,topic,MQTTQOS1,true,"Offline")) {
 			/* Worked */
-			pub("stat", "boot", "Running " __TIME__);
 			mqttbackoff = 1000;
-			char		sub       [101];
-			snprintf(sub, sizeof(sub), "+/%s/%s/#", appname, hostname);
+			mqtt.publish(topic,"Online",true);
+			snprintf(topic, sizeof(topic), "+/%s/%s/#", appname, hostname);
 			/* Specific device */
-			mqtt.subscribe(sub);
+			mqtt.subscribe(topic);
 			/* All devices */
-			snprintf(sub, sizeof(sub), "+/%s/*/#", appname);
-			mqtt.subscribe(sub);
+			snprintf(topic, sizeof(topic), "+/%s/*/#", appname);
+			mqtt.subscribe(topic);
 		} else if (mqttbackoff < 300000)
 			mqttbackoff *= 2;
 		mqttretry = millis() + mqttbackoff;
@@ -104,11 +109,15 @@ void		ESP8266RevK::loop()
 
 void		ESP8266RevK::pub(const char *prefix, const char *suffix, const char *fmt,...)
 {
-	char		temp      [256];
-	va_list		ap;
-	va_start(ap, fmt);
-	vsnprintf(temp, sizeof(temp), fmt, ap);
-	va_end(ap);
+	if(!*mqtthost)return;
+	char		temp      [256]={};
+	if(fmt)
+	{
+		va_list		ap;
+		va_start(ap, fmt);
+		vsnprintf(temp, sizeof(temp), fmt, ap);
+		va_end(ap);
+	}
 	char		topic     [101];
 	snprintf(topic, sizeof(topic), "%s/%s/%s/%s", prefix, appname, hostname, suffix);
 	mqtt.publish(topic, temp);
