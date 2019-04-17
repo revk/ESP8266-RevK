@@ -1,16 +1,5 @@
-/*
- * This is a wrapper for a number of common applications It provides the
- * basic common aspects - connnection to WiFi and MQTT
- * 
- * TODO :-
- * Add functions for app to set these and store in EEPROM
- * Add fall back SSID
- * Add fall back MQTT Add option for TLS MQTT
- * Online/offline (will)
- * 
- * There are a number of default / key settings which can be overridden in the
- * info.h file
- */
+// RevK applicatioon framework
+// See include file for more details
 
 #ifdef ARDUINO_ESP8266_NODEMCU
 #define BOARD "nodemcu"
@@ -24,37 +13,45 @@
 // Local functions
 static void pub (const char *prefix, const char *suffix, const char *fmt, ...);
 
-// Statics rather than in class - the mqtt callback was a problem, and really this is system wide stuff
-static const char *appname = NULL;      // System set from constructor as literal string
+// App name set by constructor, expceted to be static string
+static const char *appname = "RevK";    // System set from constructor as literal string
+static int appnamelen = 4;      // May be truncated
 
-// Settings that can be changed
-static char firmware[129] = "excalibur.bec.aa.net.uk";  // Host from which we load new code
+// Settings used here
+#define	settings		\
+s(hostname,32,"")		\
+s(otahost,128,"excalibur.bec.aa.net.uk")	\
+s(wifissid,32,"Iot")		\
+s(wifipass,32,"security")	\
+s(mqtthost,128,"mqtt.iot")	\
+s(mqttuser,32,"")		\
+s(mqttpass,32,"")		\
+s(mqttport,10,"1883")		\
+s(prefixcmnd,10,"cmnd")		\
+s(prefixstat,10,"stat")		\
+s(prefixtele,10,"tele")		\
+s(prefixerror,10,"error")	\
+s(prefixsetting,10,"setting")	\
 
-static char hostname[33] = { }; // Unique ID of host (default is chipid)
-
-static char wifissid[33] = "IoT";       // WiFi SSID
-static char wifipass[33] = "security";  // WiFi Password
-static char mqtthost[129] = "mqtt.iot"; // MQTT hostname/IP
-static char mqttuser[33] = "";  // MQTT usernmame
-static char mqttpass[33] = "";  // MQTT password
-
+#define s(name,len,def) static char name[len]=def;
+settings
+#undef 	s
 // Local variables
 static WiFiClient mqttclient;
 static PubSubClient mqtt;
 static unsigned long mqttping = 0;
 static unsigned long mqttretry = 0;
 static unsigned long mqttbackoff = 100;
-static unsigned short mqttport = 1883;
 
 void
-upgrade (const byte * message, size_t len)
+upgrade ()
 {
    char url[200];
-   snprintf (url, sizeof (url), "/%s.ino." BOARD ".bin", appname);
-   pub ("stat", "upgrade", "Upgrading from http://%s/%s", firmware, url);
+   snprintf (url, sizeof (url), "/%s.ino." BOARD ".bin", appnamelen, appname);
+   pub (prefixstat, "upgrade", "Upgrading from http://%s/%s", otahost, url);
    delay (1000);                // Allow clean MQTT report/ack
    WiFiClient client;
-   if (ESPhttpUpdate.update (client, firmware, 80, url))
+   if (ESPhttpUpdate.update (client, otahost, 80, url))
       Serial.println (ESPhttpUpdate.getLastErrorString ());
    delay (1000);
 }
@@ -65,33 +62,44 @@ message (const char *topic, byte * payload, unsigned int len)
    char *p = strchr (topic, '/');
    if (!p)
       return;
-   char *prefix = (char *) alloca (p - topic + 1);
-   strncpy (prefix, topic, p - topic);
-   prefix[p - topic] = 0;
+   // Find the suffix
    p = strrchr (p + 1, '/');
    if (p)
       p++;
    else
       p = NULL;
-   if (!strcmp (prefix, "cmnd") && p)
+   int l;
+   l = strlen (prefixcmnd);
+   if (p && !strncasecmp (topic, prefixcmnd, l) && topic[l] == '/')
    {
-      if (!strcmp (p, "upgrade"))
+      if (!strcasecmp (p, "upgrade"))
       {
          /* Do upgrade from web */
-         upgrade (payload, len);
+         upgrade ();
          return;
          /* Yeh, would not get here. */
       }
       if (app_cmnd (p, payload, len))
          return;
-      pub ("stat", "error", "Unknown command");
+      pub (prefixerror, p, "Bad command");
       return;
+   }
+   l = strlen (prefixsetting);
+   if (p && !strncasecmp (topic, prefixsetting, l) && topic[l] == '/')
+   {
    }
 }
 
 ESP8266RevK::ESP8266RevK (const char *myappname)
 {
-   appname = myappname;
+   appname = strrchr (myappname, '/');
+   if (appname)
+      appname++;
+   else
+      appname = myappname;
+   appnamelen = strlen (appname);
+   if (appnamelen > 4 && !strcasecmp (appname + appnamelen - 4, ".ino"))
+      appnamelen -= 4;
    if (!*hostname)
       snprintf (hostname, sizeof (hostname), "%06X", ESP.getChipId ());
    if (!*wifissid)
@@ -107,7 +115,7 @@ ESP8266RevK::ESP8266RevK (const char *myappname)
    {
       mqtt = PubSubClient ();
       mqtt.setClient (mqttclient);
-      mqtt.setServer (mqtthost, mqttport);
+      mqtt.setServer (mqtthost, atoi (mqttport));
       mqtt.setCallback (message);
    }
 }
@@ -119,17 +127,17 @@ ESP8266RevK::loop ()
    if (*mqtthost && !mqtt.loop () && mqttretry < millis ())
    {
       char topic[101];
-      snprintf (topic, sizeof (topic), "tele/%s/%s/LWT", appname, hostname);
+      snprintf (topic, sizeof (topic), "%s/%.*s/%s/LWT", prefixtele,appnamelen, appname, hostname);
       if (mqtt.connect (hostname, mqttuser, mqttpass, topic, MQTTQOS1, true, "Offline"))
       {
          /* Worked */
          mqttbackoff = 1000;
          mqtt.publish (topic, "Online", true);
-         snprintf (topic, sizeof (topic), "+/%s/%s/#", appname, hostname);
+         snprintf (topic, sizeof (topic), "+/%.*s/%s/#", appnamelen, appname, hostname);
          /* Specific device */
          mqtt.subscribe (topic);
          /* All devices */
-         snprintf (topic, sizeof (topic), "+/%s/*/#", appname);
+         snprintf (topic, sizeof (topic), "+/%.*s/*/#", appnamelen, appname);
          mqtt.subscribe (topic);
       } else if (mqttbackoff < 300000)
          mqttbackoff *= 2;
@@ -146,7 +154,7 @@ pubap (const char *prefix, const char *suffix, const char *fmt, va_list ap)
    if (fmt)
       vsnprintf (temp, sizeof (temp), fmt, ap);
    char topic[101];
-   snprintf (topic, sizeof (topic), "%s/%s/%s/%s", prefix, appname, hostname, suffix);
+   snprintf (topic, sizeof (topic), "%s/%.*s/%s/%s", prefix, appnamelen, appname, hostname, suffix);
    mqtt.publish (topic, temp);
 }
 
@@ -155,7 +163,7 @@ pub (const char *prefix, const char *suffix, const char *fmt, ...)
 {
    va_list ap;
    va_start (ap, fmt);
-   pub (prefix, suffix, fmt, ap);
+   pubap (prefix, suffix, fmt, ap);
    va_end (ap);
 }
 
@@ -164,7 +172,7 @@ ESP8266RevK::stat (const char *suffix, const char *fmt, ...)
 {
    va_list ap;
    va_start (ap, fmt);
-   pub ("stat", suffix, fmt, ap);
+   pubap (prefixstat, suffix, fmt, ap);
    va_end (ap);
 }
 
@@ -173,7 +181,7 @@ ESP8266RevK::tele (const char *suffix, const char *fmt, ...)
 {
    va_list ap;
    va_start (ap, fmt);
-   pub ("tele", suffix, fmt, ap);
+   pubap (prefixtele, suffix, fmt, ap);
    va_end (ap);
 }
 
@@ -182,13 +190,18 @@ ESP8266RevK::pub (const char *prefix, const char *suffix, const char *fmt, ...)
 {
    va_list ap;
    va_start (ap, fmt);
-   pub (prefix, suffix, fmt, ap);
+   pubap (prefix, suffix, fmt, ap);
    va_end (ap);
 }
 
+void
+ESP8266RevK::setting (const char *name, const char *value)
+{                               // Set a setting
+   // TODO
+}
 
 void
-setting (const char *name, const char *value)
+ESP8266RevK::ota ()
 {
-   // TODO
+   upgrade ();
 }
