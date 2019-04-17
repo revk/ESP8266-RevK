@@ -144,7 +144,7 @@ loadsettings ()
          break;
       if (l >= sizeof (name))
       {                         // Bad name, skip
-debug("Bad name len to read (%d)\n",l);
+         debug ("Bad name len to read (%d)\n", l);
          addr += l;             // Skip name
          l = EEPROM.read (addr++);
          addr += l;             // Skip value
@@ -154,7 +154,7 @@ debug("Bad name len to read (%d)\n",l);
          name[i] = EEPROM.read (addr++);
       name[i] = 0;
       l = EEPROM.read (addr++);
-      debug ("Load %s (%d)\n", name,l);
+      debug ("Load %s (%d)\n", name, l);
       for (i = 0; i < l; i++)
          value[i] = EEPROM.read (addr++);
       value[i] = 0;
@@ -169,11 +169,6 @@ boolean
 upgrade ()
 {                               // Do OTA upgrade
    rst_info *myResetInfo = ESP.getResetInfoPtr ();
-   if (myResetInfo->reason == REASON_EXT_SYS_RST)
-   {                            // Cannot flash if serial loaded for some reason
-      pub (prefixerror, "upgrade", "Please restart first");
-      return false;
-   }
    debug ("Upgrade\n");
    // TODO add TLS option
    savesettings ();
@@ -330,17 +325,18 @@ ESP8266RevK::ESP8266RevK (const char *myappname)
    debug ("Init done\n");
 }
 
-boolean
-ESP8266RevK::loop ()
+boolean ESP8266RevK::loop ()
 {
-   long now = millis ();
+   long
+      now = millis ();
    if (settingsupdate && settingsupdate < now)
       savesettings ();
    /* MQTT reconnnect */
    if (*mqtthost && !mqtt.loop () && mqttretry < now)
    {
       debug ("MQTT check\n");
-      char topic[101];
+      char
+         topic[101];
       snprintf (topic, sizeof (topic), "%s/%.*s/%s/LWT", prefixtele, appnamelen, appname, hostname);
       if (mqtt.connect (hostname, mqttuser, mqttpass, topic, MQTTQOS1, true, "Offline"))
       {
@@ -362,72 +358,80 @@ ESP8266RevK::loop ()
    return true;                 // OK
 }
 
-static boolean
+static
+   boolean
 pubap (const char *prefix, const char *suffix, const char *fmt, va_list ap)
 {
    if (!*mqtthost)
       return false;             // No MQTT
-   char temp[256] = { };
+   char
+   temp[256] = { };
    if (fmt)
       vsnprintf (temp, sizeof (temp), fmt, ap);
-   char topic[101];
+   char
+      topic[101];
    snprintf (topic, sizeof (topic), "%s/%.*s/%s/%s", prefix, appnamelen, appname, hostname, suffix);
    return mqtt.publish (topic, temp);
 }
 
-static boolean
+static
+   boolean
 pub (const char *prefix, const char *suffix, const char *fmt, ...)
 {
-   va_list ap;
+   va_list
+      ap;
    va_start (ap, fmt);
-   boolean ret = pubap (prefix, suffix, fmt, ap);
+   boolean
+      ret = pubap (prefix, suffix, fmt, ap);
    va_end (ap);
    return ret;
 }
 
-boolean
-ESP8266RevK::stat (const char *suffix, const char *fmt, ...)
+boolean ESP8266RevK::stat (const char *suffix, const char *fmt, ...)
 {
-   va_list ap;
+   va_list
+      ap;
    va_start (ap, fmt);
-   boolean ret = pubap (prefixstat, suffix, fmt, ap);
+   boolean
+      ret = pubap (prefixstat, suffix, fmt, ap);
    va_end (ap);
    return ret;
 }
 
-boolean
-ESP8266RevK::tele (const char *suffix, const char *fmt, ...)
+boolean ESP8266RevK::tele (const char *suffix, const char *fmt, ...)
 {
-   va_list ap;
+   va_list
+      ap;
    va_start (ap, fmt);
-   boolean ret = pubap (prefixtele, suffix, fmt, ap);
+   boolean
+      ret = pubap (prefixtele, suffix, fmt, ap);
    va_end (ap);
    return ret;
 }
 
-boolean
-ESP8266RevK::pub (const char *prefix, const char *suffix, const char *fmt, ...)
+boolean ESP8266RevK::pub (const char *prefix, const char *suffix, const char *fmt, ...)
 {
-   va_list ap;
+   va_list
+      ap;
    va_start (ap, fmt);
-   boolean ret = -pubap (prefix, suffix, fmt, ap);
+   boolean
+      ret = pubap (prefix, suffix, fmt, ap);
    va_end (ap);
    return ret;
 }
 
-boolean
-ESP8266RevK::setting (const char *name, const char *value)
+boolean ESP8266RevK::setting (const char *name, const char *value)
 {
    return applysetting (name, (const byte *) value, strlen (value));
 }
 
-boolean ESP8266RevK::setting (const char *name, const byte * value, size_t len)
+boolean
+ESP8266RevK::setting (const char *name, const byte * value, size_t len)
 {                               // Set a setting
    return applysetting (name, value, len);
 }
 
-boolean
-ESP8266RevK::ota ()
+boolean ESP8266RevK::ota ()
 {
    return upgrade ();
 }
