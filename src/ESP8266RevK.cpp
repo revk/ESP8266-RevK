@@ -174,7 +174,7 @@ upgrade ()
    savesettings ();
    char url[200];
    snprintf (url, sizeof (url), "/%.*s.ino." BOARD ".bin", appnamelen, appname);
-   pub (prefixstat, "upgrade", "Upgrading from http://%s/%s", otahost, url);
+   pub (prefixstat, "upgrade", "Upgrading from http://%s%s", otahost, url);
    delay (1000);                // Allow clean MQTT report/ack
    WiFiClient client;
    if (ESPhttpUpdate.update (client, otahost, 80, url))
