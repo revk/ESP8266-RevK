@@ -233,7 +233,6 @@ loadsettings ()
          name[i] = EEPROM.read (addr++);
       name[i] = 0;
       l = EEPROM.read (addr++);
-      debug ("Load %s (%d)\n", name, l);
       for (i = 0; i < l; i++)
          value[i] = EEPROM.read (addr++);
       value[i] = 0;
@@ -241,6 +240,7 @@ loadsettings ()
    }
    EEPROM.end ();
    settingsupdate = 0;          // No need to save
+   debug ("Loaded settings\n");
    return true;
 }
 
@@ -381,7 +381,7 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const
    appversion = myappversion;
    debug ("Application start %.*s\n", appnamelen, appname);
    loadsettings ();
-   if (!*otahost && otahost)
+   if (!*otahost && myotahost)
       strncpy (otahost, myotahost, sizeof (otahost));
    if (!*hostname)
       snprintf (hostname, sizeof (hostname), "%06X", ESP.getChipId ());
