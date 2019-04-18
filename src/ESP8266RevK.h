@@ -41,7 +41,7 @@ boolean app_setting(const char *setting,const byte *value,size_t len);	// Called
 
 class ESP8266RevK : private PubSubClient {
  public:
-   ESP8266RevK(const char*myappname="RevK");
+   ESP8266RevK(const char*myappname="RevK",const char *myappversion=NULL);
    // Functions return true of "OK"
    boolean loop(void);	// Call in loop
    boolean stat(const char *suffix, const char *fmt=NULL, ...); // Publish stat
@@ -51,7 +51,7 @@ class ESP8266RevK : private PubSubClient {
    boolean setting(const char *name,const char*value=NULL); // Apply a setting (gets written to EEPROM)
    boolean setting(const char *name,const byte*value=NULL,size_t len=0); // Apply a setting (gets written to EEPROM)
    boolean ota();	// Do upgrade
-
+   boolean restart();	// Save settings and restart
  private:
 };
 

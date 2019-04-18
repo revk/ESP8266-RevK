@@ -32,7 +32,9 @@ boolean applysetting (const char *name, const byte * value, size_t len);
 
 // App name set by constructor, expceted to be static string
 static const char *appname = "RevK";    // System set from constructor as literal string
+static const char *appversion = NULL;   //  System set from constructor as literal string
 static int appnamelen = 4;      // May be truncated
+static boolean do_restart = false;      // Do a restart in main loop cleanly
 
 // Settings used here
 #define	MAXSETTINGS 1024
@@ -264,8 +266,7 @@ message (const char *topic, byte * payload, unsigned int len)
       }
       if (!strcasecmp (p, "restart"))
       {
-         savesettings ();
-         ESP.restart ();
+         do_restart = true;
          return;
       }
       if (!app_cmnd (p, payload, len))
@@ -283,7 +284,7 @@ message (const char *topic, byte * payload, unsigned int len)
    }
 }
 
-ESP8266RevK::ESP8266RevK (const char *myappname)
+ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion)
 {
 #ifdef REVKDEBUG
    Serial.begin (74880);
@@ -296,6 +297,7 @@ ESP8266RevK::ESP8266RevK (const char *myappname)
    appnamelen = strlen (appname);
    if (appnamelen > 4 && !strcasecmp (appname + appnamelen - 4, ".ino"))
       appnamelen -= 4;
+   appversion = myappversion;
    debug ("Application start %.*s\n", appnamelen, appname);
    loadsettings ();
    if (!*hostname)
@@ -338,13 +340,13 @@ boolean ESP8266RevK::loop ()
       debug ("MQTT check\n");
       char
          topic[101];
-      snprintf (topic, sizeof (topic), "%s/%.*s/%s/LWT", prefixtele, appnamelen, appname, hostname);
+      snprintf (topic, sizeof (topic), "%s/%.*s/%s", prefixtele, appnamelen, appname, hostname);
       if (mqtt.connect (hostname, mqttuser, mqttpass, topic, MQTTQOS1, true, "Offline"))
       {
          debug ("MQTT ok\n");
          /* Worked */
          mqttbackoff = 1000;
-         mqtt.publish (topic, "Online", true);  // LWT
+         mqtt.publish (topic, appversion ? : "Online", true);   // LWT
          /* Specific device */
          snprintf (topic, sizeof (topic), "+/%.*s/%s/#", appnamelen, appname, hostname);
          mqtt.subscribe (topic);
@@ -355,7 +357,11 @@ boolean ESP8266RevK::loop ()
          mqttbackoff *= 2;
       mqttretry = now + mqttbackoff;
    }
-   // TODO reboot before mills() wrap?
+   if (do_restart)
+   {
+      savesettings ();
+      ESP.restart ();
+   }
    return true;                 // OK
 }
 
@@ -446,4 +452,9 @@ ESP8266RevK::setting (const char *name, const byte * value, size_t len)
 boolean ESP8266RevK::ota ()
 {
    return upgrade ();
+}
+
+boolean ESP8266RevK::restart ()
+{
+   do_restart = true;
 }
