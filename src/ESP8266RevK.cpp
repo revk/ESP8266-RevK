@@ -34,6 +34,7 @@ static const char *appname = "RevK";    // System set from constructor as litera
 static const char *appversion = NULL;   //  System set from constructor as literal string
 static int appnamelen = 4;      // May be truncated
 static boolean do_restart = false;      // Do a restart in main loop cleanly
+static boolean do_upgrade = false;       // Do an OTA upgrade
 
 // Settings used here
 #define	OTAHOST			"excalibur.bec.aa.net.uk"       // Default OTA host
@@ -253,7 +254,7 @@ upgrade ()
    char *host = otahost;
    if (!*host)
       host = OTAHOST;           // Default
-   pub (prefixstat, "upgrade", "Upgrading from http://%s%s", host, url);
+   pub (prefixstat, "upgrade", "Upgrading from https://%s%s", host, url);
    delay (1000);                // Allow clean MQTT report/ack
    WiFiClientSecure client = myleclient ();;
    if (ESPhttpUpdate.update (client, host, 443, url))
@@ -341,8 +342,8 @@ message (const char *topic, byte * payload, unsigned int len)
    {
       if (!strcasecmp (p, "upgrade"))
       {                         // OTA opgrade
-         if (upgrade ())
-            return;
+         do_upgrade = true;
+         return;
       }
       if (!strcasecmp (p, "restart"))
       {
@@ -380,7 +381,7 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const
    appversion = myappversion;
    debug ("Application start %.*s\n", appnamelen, appname);
    loadsettings ();
-   if (!*otahost&&otahost)
+   if (!*otahost && otahost)
       strncpy (otahost, myotahost, sizeof (otahost));
    if (!*hostname)
       snprintf (hostname, sizeof (hostname), "%06X", ESP.getChipId ());
@@ -406,19 +407,22 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const
    debug ("Init done\n");
 }
 
-boolean
-ESP8266RevK::loop ()
+boolean ESP8266RevK::loop ()
 {
-   long now = millis ();        // Use with care as wraps every 49 days - best used signed to allow for wrapping
+   long
+      now = millis ();          // Use with care as wraps every 49 days - best used signed to allow for wrapping
    if (settingsupdate && settingsupdate < now)
       savesettings ();
    // MQTT reconnnect
-   static long mqttretry = 0;   // Note, signed to allow for wrapping millis
+   static long
+      mqttretry = 0;            // Note, signed to allow for wrapping millis
    if (*mqtthost && !mqtt.loop () && (int) (mqttretry - now) < 0)
    {
-      static long mqttbackoff = 100;
+      static long
+         mqttbackoff = 100;
       debug ("MQTT check\n");
-      char topic[101];
+      char
+         topic[101];
       snprintf (topic, sizeof (topic), "%s/%.*s/%s", prefixtele, appnamelen, appname, hostname);
       if (mqtt.connect (hostname, mqttuser, mqttpass, topic, MQTTQOS1, true, "Offline"))
       {
@@ -441,106 +445,121 @@ ESP8266RevK::loop ()
       savesettings ();
       ESP.restart ();
    }
+   if (do_upgrade)
+   {
+      upgrade ();
+      ESP.restart (); // Should not be needed
+   }
    return true;                 // OK
 }
 
-static boolean
+static
+   boolean
 pubap (const char *prefix, const char *suffix, const char *fmt, va_list ap)
 {
    if (!*mqtthost)
       return false;             // No MQTT
-   char temp[256] = { };
+   char
+   temp[256] = { };
    if (fmt)
       vsnprintf (temp, sizeof (temp), fmt, ap);
-   char topic[101];
+   char
+      topic[101];
    snprintf (topic, sizeof (topic), "%s/%.*s/%s/%s", prefix, appnamelen, appname, hostname, suffix);
    return mqtt.publish (topic, temp);
 }
 
-static boolean
+static
+   boolean
 pub (const char *prefix, const char *suffix, const char *fmt, ...)
 {
-   va_list ap;
+   va_list
+      ap;
    va_start (ap, fmt);
-   boolean ret = pubap (prefix, suffix, fmt, ap);
+   boolean
+      ret = pubap (prefix, suffix, fmt, ap);
    va_end (ap);
    return ret;
 }
 
-boolean
-ESP8266RevK::stat (const char *suffix, const char *fmt, ...)
+boolean ESP8266RevK::stat (const char *suffix, const char *fmt, ...)
 {
-   va_list ap;
+   va_list
+      ap;
    va_start (ap, fmt);
-   boolean ret = pubap (prefixstat, suffix, fmt, ap);
+   boolean
+      ret = pubap (prefixstat, suffix, fmt, ap);
    va_end (ap);
    return ret;
 }
 
-boolean
-ESP8266RevK::tele (const char *suffix, const char *fmt, ...)
+boolean ESP8266RevK::tele (const char *suffix, const char *fmt, ...)
 {
-   va_list ap;
+   va_list
+      ap;
    va_start (ap, fmt);
-   boolean ret = pubap (prefixtele, suffix, fmt, ap);
+   boolean
+      ret = pubap (prefixtele, suffix, fmt, ap);
    va_end (ap);
    return ret;
 }
 
-boolean
-ESP8266RevK::error (const char *suffix, const char *fmt, ...)
+boolean ESP8266RevK::error (const char *suffix, const char *fmt, ...)
 {
-   va_list ap;
+   va_list
+      ap;
    va_start (ap, fmt);
-   boolean ret = pubap (prefixerror, suffix, fmt, ap);
+   boolean
+      ret = pubap (prefixerror, suffix, fmt, ap);
    va_end (ap);
    return ret;
 }
 
-boolean
-ESP8266RevK::pub (const char *prefix, const char *suffix, const char *fmt, ...)
+boolean ESP8266RevK::pub (const char *prefix, const char *suffix, const char *fmt, ...)
 {
-   va_list ap;
+   va_list
+      ap;
    va_start (ap, fmt);
-   boolean ret = pubap (prefix, suffix, fmt, ap);
+   boolean
+      ret = pubap (prefix, suffix, fmt, ap);
    va_end (ap);
    return ret;
 }
 
-boolean
-ESP8266RevK::setting (const char *name, const char *value)
+boolean ESP8266RevK::setting (const char *name, const char *value)
 {
    return applysetting (name, (const byte *) value, strlen (value));
 }
 
-boolean ESP8266RevK::setting (const char *name, const byte * value, size_t len)
+boolean
+ESP8266RevK::setting (const char *name, const byte * value, size_t len)
 {                               // Set a setting
    return applysetting (name, value, len);
 }
 
-boolean
-ESP8266RevK::ota ()
+boolean ESP8266RevK::ota ()
 {
-   return upgrade ();
+   do_upgrade = true;
 }
 
-boolean
-ESP8266RevK::restart ()
+boolean ESP8266RevK::restart ()
 {
    do_restart = true;
 }
 
-static WiFiClientSecure
+static
+   WiFiClientSecure
 myleclient ()
 {
-   WiFiClientSecure client;
-   unsigned char tls_ca_cert[] = TLS_CA_CERT;
+   WiFiClientSecure
+      client;
+   unsigned char
+      tls_ca_cert[] = TLS_CA_CERT;
    client.setCACert (tls_ca_cert, TLS_CA_CERT_LENGTH);
    return client;
 }
 
-WiFiClientSecure
-ESP8266RevK::leclient ()
+WiFiClientSecure ESP8266RevK::leclient ()
 {
    return myleclient ();
 }
