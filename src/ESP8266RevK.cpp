@@ -333,7 +333,7 @@ boolean ESP8266RevK::loop ()
    // MQTT reconnnect
    static long
       mqttretry = 0;            // Note, signed to allow for wrapping millis
-   if (*mqtthost && !mqtt.loop () && (mqttretry - now) < 0)
+   if (*mqtthost && !mqtt.loop () && (int)(mqttretry - now) < 0)
    {
       static long
          mqttbackoff = 100;
