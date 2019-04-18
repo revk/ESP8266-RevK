@@ -12,20 +12,20 @@
 // Use setting to set a setting (including prefix[whatever])
 // Predefined settings are
 //
-// hostname	The hostname
-// otahost	OTA hostname
-// wifissid	WiFi SSID
-// wifipass	WiFi Password
-// mqtthost	MQTT hostname
-// mqttuser	MQTT username
-// mqttpass	MQTT password
-// mqttport	MQTT port number
+// hostname	The hostname	(default is chip ID)
+// otahost	OTA hostname	(always TLS using Let's Encrypt)
+// wifissid	WiFi SSID	(default for set up is IoT)
+// wifipass	WiFi Password	(default for set up is security)
+// mqtthost	MQTT hostname	(assumed to be local and so non TLS)
+// mqttuser	MQTT username	(default is empty)
+// mqttpass	MQTT password	(default is empty)
+// mqttport	MQTT port number (default is 1883)
 // prefix[xx]	The prefixes, e.g. prefixcmnd
 //
 // Use cmnd to send commands
 // Predefined commands are :-
-// upgrade	Do OTA upgrade
-// restart	Do a restart
+// upgrade	Do OTA upgrade from otahost via HTTPS
+// restart	Do a restart (saving settings first)
 //
 
 #ifndef ESP8266RevK_H

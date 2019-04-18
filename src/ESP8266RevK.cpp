@@ -4,7 +4,6 @@
 // TODO :-
 // Fallback SSID
 // Fallback MQTT
-// MQTT TLS
 
 //#define REVKDEBUG               // If defined, does serial debug at 74880
 
