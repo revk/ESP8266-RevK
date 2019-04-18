@@ -21,6 +21,10 @@
 #include <ESP8266WiFiMulti.h>
 #include <ESP8266httpUpdate.h>
 #include <EEPROM.h>
+extern "C"
+{
+#include "sntp.h"
+}
 
 // Local functions
 static WiFiClientSecure myleclient ();
@@ -309,6 +313,7 @@ applysetting (const char *name, const byte * value, size_t len)
       if (s->value)
          free (s->value);
       free (s);
+      settingsupdate = millis () + 1000;
    } else if (s->len != len || memcpy (s->value, value, len))
    {                            // Change value
       if (s->value)
@@ -444,18 +449,26 @@ ESP8266RevK::loop ()
       ESP.restart ();           // Should not be needed
       return false;             // Uh
    }
+   // More aggressive SNTP
+   static long sntpbackoff = 100;
+   static long sntptry = 0;
+   if (time (NULL) < 86400 && (int) (sntptry - now) < 0)
+   {
+      sntptry = now + sntpbackoff;
+      if (sntpbackoff < 300000)
+         sntpbackoff *= 2;
+      sntp_stop ();
+      sntp_init ();
+   }
    // Save settings
    if (settingsupdate && settingsupdate < now)
       savesettings ();
    // WiFi
-   if (*wifissid2 || *wifissid3)
-   { // Using WiFiMulti
-      if (WiFiMulti.run () != WL_CONNECTED)
-         return false;          // No wifi, not a lot more we can do.
-   } else
-   { // not using WiFiMulti
-      if (!WiFi.isConnected ())
-         return false;
+   if ((*wifissid2 || *wifissid3) ? (WiFiMulti.run () != WL_CONNECTED) : (!WiFi.isConnected ()))
+   {
+      sntpbackoff = 100;
+      sntptry = now;
+      return false;             // No wifi, not a lot more we can do.
    }
    // MQTT reconnnect
    static long mqttretry = 0;   // Note, signed to allow for wrapping millis
@@ -484,12 +497,13 @@ ESP8266RevK::loop ()
    return true;                 // OK
 }
 
-static boolean
-pubap (const char *prefix, const char *suffix, const char *fmt, va_list ap)
+static boolean pubap (const char *prefix, const char *suffix, const char *fmt, va_list ap)
 {
    if (!*mqtthost)
       return false;             // No MQTT
-   char temp[256] = { };
+   char temp[256] =
+   {
+   };
    if (fmt)
       vsnprintf (temp, sizeof (temp), fmt, ap);
    char topic[101];
@@ -500,8 +514,7 @@ pubap (const char *prefix, const char *suffix, const char *fmt, va_list ap)
    return mqtt.publish (topic, temp);
 }
 
-static boolean
-pub (const char *prefix, const char *suffix, const char *fmt, ...)
+static boolean pub (const char *prefix, const char *suffix, const char *fmt, ...)
 {
    va_list ap;
    va_start (ap, fmt);
@@ -510,8 +523,7 @@ pub (const char *prefix, const char *suffix, const char *fmt, ...)
    return ret;
 }
 
-boolean
-ESP8266RevK::stat (const char *suffix, const char *fmt, ...)
+boolean ESP8266RevK::stat (const char *suffix, const char *fmt, ...)
 {
    va_list ap;
    va_start (ap, fmt);
@@ -520,8 +532,7 @@ ESP8266RevK::stat (const char *suffix, const char *fmt, ...)
    return ret;
 }
 
-boolean
-ESP8266RevK::tele (const char *suffix, const char *fmt, ...)
+boolean ESP8266RevK::tele (const char *suffix, const char *fmt, ...)
 {
    va_list ap;
    va_start (ap, fmt);
@@ -530,8 +541,7 @@ ESP8266RevK::tele (const char *suffix, const char *fmt, ...)
    return ret;
 }
 
-boolean
-ESP8266RevK::error (const char *suffix, const char *fmt, ...)
+boolean ESP8266RevK::error (const char *suffix, const char *fmt, ...)
 {
    va_list ap;
    va_start (ap, fmt);
@@ -540,8 +550,7 @@ ESP8266RevK::error (const char *suffix, const char *fmt, ...)
    return ret;
 }
 
-boolean
-ESP8266RevK::pub (const char *prefix, const char *suffix, const char *fmt, ...)
+boolean ESP8266RevK::pub (const char *prefix, const char *suffix, const char *fmt, ...)
 {
    va_list ap;
    va_start (ap, fmt);
@@ -550,8 +559,7 @@ ESP8266RevK::pub (const char *prefix, const char *suffix, const char *fmt, ...)
    return ret;
 }
 
-boolean
-ESP8266RevK::setting (const char *name, const char *value)
+boolean ESP8266RevK::setting (const char *name, const char *value)
 {
    return applysetting (name, (const byte *) value, strlen (value));
 }
@@ -561,20 +569,17 @@ boolean ESP8266RevK::setting (const char *name, const byte * value, size_t len)
    return applysetting (name, value, len);
 }
 
-boolean
-ESP8266RevK::ota ()
+boolean ESP8266RevK::ota ()
 {
    do_upgrade = true;
 }
 
-boolean
-ESP8266RevK::restart ()
+boolean ESP8266RevK::restart ()
 {
    do_restart = true;
 }
 
-static WiFiClientSecure
-myleclient ()
+static WiFiClientSecure myleclient ()
 {
    WiFiClientSecure client;
    unsigned char tls_ca_cert[] = TLS_CA_CERT;
@@ -582,8 +587,7 @@ myleclient ()
    return client;
 }
 
-WiFiClientSecure
-ESP8266RevK::leclient ()
+WiFiClientSecure ESP8266RevK::leclient ()
 {
    return myleclient ();
 }
