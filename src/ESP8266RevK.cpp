@@ -68,9 +68,6 @@ static long settingsupdate = 0; // When to do a settings update (delay after set
 // Local variables
 static WiFiClient mqttclient;
 static PubSubClient mqtt;
-static unsigned long mqttping = 0;
-static unsigned long mqttretry = 0;
-static unsigned long mqttbackoff = 100;
 
 boolean
 savesettings ()
@@ -328,12 +325,16 @@ ESP8266RevK::ESP8266RevK (const char *myappname)
 boolean ESP8266RevK::loop ()
 {
    long
-      now = millis ();
+      now = millis ();          // Use with care as wraps every 49 days - best used signed to allow for wrapping
    if (settingsupdate && settingsupdate < now)
       savesettings ();
-   /* MQTT reconnnect */
-   if (*mqtthost && !mqtt.loop () && mqttretry < now)
+   // MQTT reconnnect
+   static long
+      mqttretry = 0;            // Note, signed to allow for wrapping millis
+   if (*mqtthost && !mqtt.loop () && (mqttretry - now) < 0)
    {
+      static long
+         mqttbackoff = 100;
       debug ("MQTT check\n");
       char
          topic[101];
@@ -405,6 +406,17 @@ boolean ESP8266RevK::tele (const char *suffix, const char *fmt, ...)
    va_start (ap, fmt);
    boolean
       ret = pubap (prefixtele, suffix, fmt, ap);
+   va_end (ap);
+   return ret;
+}
+
+boolean ESP8266RevK::error (const char *suffix, const char *fmt, ...)
+{
+   va_list
+      ap;
+   va_start (ap, fmt);
+   boolean
+      ret = pubap (prefixerror, suffix, fmt, ap);
    va_end (ap);
    return ret;
 }
