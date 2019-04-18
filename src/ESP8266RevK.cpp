@@ -376,14 +376,16 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const
 #ifdef REVKDEBUG
    Serial.begin (74880);
 #endif
-   appname = strrchr (myappname, '/');
-   if (appname)
-      appname++;
-   else
-      appname = myappname;
-   appnamelen = strlen (appname);
-   if (appnamelen > 4 && !strcasecmp (appname + appnamelen - 4, ".ino"))
-      appnamelen -= 4;
+   {                            // Fudge appname - strip training .whatever. Strip leading whatever/ or whatever\ (windows)
+      int i,
+        l = strlen (myappname);
+      for (i = l; i && myappname[i - 1] != '.' && myappname[i - 1] != '/' && myappname[i - 1] != '\\'; i--);
+      if (i && myappname[i - 1] == '.')
+         l = --i;
+      for (; i && myappname[i - 1] != '/' && myappname[i - 1] != '\\'; i--);
+      appname = myappname + i;
+      appnamelen = l - i;
+   }
    appversion = myappversion;
    debug ("Application start %.*s\n", appnamelen, appname);
    loadsettings ();
@@ -427,8 +429,7 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const
    debug ("RevK init done\n");
 }
 
-boolean
-ESP8266RevK::loop ()
+boolean ESP8266RevK::loop ()
 {
    long now = millis ();        // Use with care as wraps every 49 days - best used signed to allow for wrapping
    if (do_restart)
@@ -517,46 +518,46 @@ static boolean pubap (const char *prefix, const char *suffix, const char *fmt, v
 static boolean pub (const char *prefix, const char *suffix, const char *fmt, ...)
 {
    va_list ap;
-   va_start (ap, fmt);
+     va_start (ap, fmt);
    boolean ret = pubap (prefix, suffix, fmt, ap);
-   va_end (ap);
-   return ret;
+     va_end (ap);
+     return ret;
 }
 
 boolean ESP8266RevK::stat (const char *suffix, const char *fmt, ...)
 {
    va_list ap;
-   va_start (ap, fmt);
+     va_start (ap, fmt);
    boolean ret = pubap (prefixstat, suffix, fmt, ap);
-   va_end (ap);
-   return ret;
+     va_end (ap);
+     return ret;
 }
 
 boolean ESP8266RevK::tele (const char *suffix, const char *fmt, ...)
 {
    va_list ap;
-   va_start (ap, fmt);
+     va_start (ap, fmt);
    boolean ret = pubap (prefixtele, suffix, fmt, ap);
-   va_end (ap);
-   return ret;
+     va_end (ap);
+     return ret;
 }
 
 boolean ESP8266RevK::error (const char *suffix, const char *fmt, ...)
 {
    va_list ap;
-   va_start (ap, fmt);
+     va_start (ap, fmt);
    boolean ret = pubap (prefixerror, suffix, fmt, ap);
-   va_end (ap);
-   return ret;
+     va_end (ap);
+     return ret;
 }
 
 boolean ESP8266RevK::pub (const char *prefix, const char *suffix, const char *fmt, ...)
 {
    va_list ap;
-   va_start (ap, fmt);
+     va_start (ap, fmt);
    boolean ret = pubap (prefix, suffix, fmt, ap);
-   va_end (ap);
-   return ret;
+     va_end (ap);
+     return ret;
 }
 
 boolean ESP8266RevK::setting (const char *name, const char *value)
@@ -581,9 +582,11 @@ boolean ESP8266RevK::restart ()
 
 static WiFiClientSecure myleclient ()
 {
+   static BearSSL::Session sess;
    WiFiClientSecure client;
    unsigned char tls_ca_cert[] = TLS_CA_CERT;
    client.setCACert (tls_ca_cert, TLS_CA_CERT_LENGTH);
+   client.setSession (&sess);
    return client;
 }
 
