@@ -14,8 +14,8 @@
 //
 // hostname	The hostname	(default is chip ID)
 // otahost	OTA hostname	(always TLS using Let's Encrypt)
-// wifissid	WiFi SSID	(default for set up is IoT)
-// wifipass	WiFi Password	(default for set up is security)
+// wifissid	WiFi SSID	(default for set up is IoT) (also wifissid2 and wifissid3)
+// wifipass	WiFi Password	(default for set up is security) (also wifipassid2 and wifipassid3)
 // mqtthost	MQTT hostname	(assumed to be local and so non TLS)
 // mqttuser	MQTT username	(default is empty)
 // mqttpass	MQTT password	(default is empty)
@@ -44,7 +44,7 @@ class ESP8266RevK : private PubSubClient {
    ESP8266RevK(const char*myappname="RevK",const char *myappversion=NULL,const char *myotahost=NULL);
    WiFiClientSecure leclient();	// Return client preset with Let's Encrypt CA installed
    // Functions return true of "OK"
-   boolean loop(void);	// Call in loop
+   boolean loop(void);	// Call in loop, returns false if wifi not connected
    boolean stat(const char *suffix, const char *fmt=NULL, ...); // Publish stat
    boolean tele(const char *suffix, const char *fmt=NULL, ...); // Publish tele
    boolean error(const char *suffix, const char *fmt=NULL, ...); // Publish error

@@ -2,7 +2,6 @@
 // See include file for more details
 //
 // TODO :-
-// Fallback SSID
 // Fallback MQTT
 
 //#define REVKDEBUG               // If defined, does serial debug at 74880
@@ -20,6 +19,7 @@
 #endif
 
 #include <ESP8266RevK.h>
+#include <ESP8266WiFiMulti.h>
 #include <ESP8266httpUpdate.h>
 #include <EEPROM.h>
 
@@ -44,6 +44,10 @@ s(hostname,32,"")		\
 s(otahost,128,"")		\
 s(wifissid,32,"IoT")		\
 s(wifipass,32,"security")	\
+s(wifissid2,32,"IoT")		\
+s(wifipass2,32,"insecure")	\
+s(wifissid3,32,"IoT")		\
+s(wifipass3,32,"")	\
 s(mqtthost,128,"mqtt.iot")	\
 s(mqttuser,32,"")		\
 s(mqttpass,32,"")		\
@@ -148,6 +152,7 @@ static setting_t *set = NULL;   // The settings
 static long settingsupdate = 0; // When to do a settings update (delay after settings changed, 0 if no change)
 
 // Local variables
+static ESP8266WiFiMulti WiFiMulti;
 static WiFiClient mqttclient;
 static PubSubClient mqtt;
 
@@ -392,7 +397,12 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const
    snprintf (host, sizeof (host), "%.*s-%s", appnamelen, appname, hostname);
    WiFi.hostname (host);
    WiFi.mode (WIFI_STA);
-   WiFi.begin (wifissid, wifipass);
+   if (*wifissid)
+      WiFiMulti.addAP (wifissid, wifipass);
+   if (*wifissid2)
+      WiFiMulti.addAP (wifissid2, wifipass2);
+   if (*wifissid3)
+      WiFiMulti.addAP (wifissid3, wifipass3);
    if (*mqtthost)
    {
       debug ("MQTT %s\n", mqtthost);
@@ -408,8 +418,30 @@ boolean ESP8266RevK::loop ()
 {
    long
       now = millis ();          // Use with care as wraps every 49 days - best used signed to allow for wrapping
+   if (do_restart)
+   {
+      savesettings ();
+      pub (prefixstat, "restart", "Restarting");
+      mqttclient.flush ();
+      mqttclient.stop ();
+      ESP.restart ();
+      return false;             // Uh
+   }
+   if (do_upgrade)
+   {
+      pub (prefixstat, "upgrade", "OTA upgrade");
+      mqttclient.flush ();
+      mqttclient.stop ();
+      upgrade ();
+      ESP.restart ();           // Should not be needed
+      return false;             // Uh
+   }
+   // Save settings
    if (settingsupdate && settingsupdate < now)
       savesettings ();
+   // WiFi
+   if (WiFiMulti.run () != WL_CONNECTED)
+      return false;             // No wifi, not a lot we can do.
    // MQTT reconnnect
    static long
       mqttretry = 0;            // Note, signed to allow for wrapping millis
@@ -436,24 +468,6 @@ boolean ESP8266RevK::loop ()
       } else if (mqttbackoff < 300000)
          mqttbackoff *= 2;
       mqttretry = now + mqttbackoff;
-   }
-   if (do_restart)
-   {
-      savesettings ();
-      pub (prefixstat, "restart", "Restarting");
-      mqttclient.flush ();
-      mqttclient.stop ();
-      ESP.restart ();
-      return false;             // Uh
-   }
-   if (do_upgrade)
-   {
-      pub (prefixstat, "upgrade", "OTA upgrade");
-      mqttclient.flush ();
-      mqttclient.stop ();
-      upgrade ();
-      ESP.restart ();           // Should not be needed
-      return false;             // Uh
    }
    return true;                 // OK
 }
