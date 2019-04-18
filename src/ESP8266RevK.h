@@ -14,19 +14,25 @@
 //
 // hostname	The hostname	(default is chip ID)
 // otahost	OTA hostname	(always TLS using Let's Encrypt)
-// wifissid	WiFi SSID	(default for set up is IoT) (also wifissid2 and wifissid3)
-// wifipass	WiFi Password	(default for set up is security) (also wifipassid2 and wifipassid3)
+// wifissid	WiFi SSID	(default for set up is IoT)
+// wifipass	WiFi Password	(default for set up is security)
 // mqtthost	MQTT hostname	(assumed to be local and so non TLS)
 // mqttuser	MQTT username	(default is empty)
 // mqttpass	MQTT password	(default is empty)
 // mqttport	MQTT port number (default is 1883)
 // prefix[xx]	The prefixes, e.g. prefixcmnd
 //
+// Note that wifissid2, and wifissid3 (and wifipass2/wifipass3) can be defined.
+// If any are defined then WiFiMulti is used which only tries non-hidden SSIDs
+// To use with hidden SSID, *only* set wifissid/wifipass
+//
 // Use cmnd to send commands
 // Predefined commands are :-
 // upgrade	Do OTA upgrade from otahost via HTTPS
 // restart	Do a restart (saving settings first)
 //
+
+//#define REVKDEBUG               // If defined, does serial debug at 74880
 
 #ifndef ESP8266RevK_H
 #define ESP8266RevK_H
