@@ -47,7 +47,7 @@ boolean app_setting(const char *setting,const byte *value,size_t len);	// Called
 
 class ESP8266RevK : private PubSubClient {
  public:
-   ESP8266RevK(const char*myappname="RevK",const char *myappversion=NULL,const char *myotahost=NULL);
+   ESP8266RevK(const char*myappname="RevK",const char *myappversion=NULL,const char *myotahost=NULL,boolean usetls=true);
    WiFiClientSecure leclient();	// Return client preset with Let's Encrypt CA installed
    // Functions return true of "OK"
    boolean loop(void);	// Call in loop, returns false if wifi not connected
