@@ -3,6 +3,7 @@
 //
 // TODO :-
 // Fallback MQTT
+// TLS MQTT (fingerprint)
 
 #include <ESP8266RevK.h>
 
