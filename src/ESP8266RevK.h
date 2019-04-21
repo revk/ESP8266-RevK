@@ -32,7 +32,7 @@
 // restart	Do a restart (saving settings first)
 //
 
-#define REVKDEBUG               // If defined, does serial debug at 74880
+//#define REVKDEBUG               // If defined, does serial debug at 74880
 
 #ifndef ESP8266RevK_H
 #define ESP8266RevK_H
