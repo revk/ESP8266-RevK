@@ -464,7 +464,7 @@ boolean ESP8266RevK::loop ()
    }
    if (do_upgrade)
    {
-      pub (prefixstat, "upgrade", "OTA upgrade %s", otahost ? : "(default)");
+      pub (prefixstat, "upgrade", "OTA upgrade %s", otahost);
       mqttclient.flush ();
       mqttclient.stop ();
       upgrade ();
