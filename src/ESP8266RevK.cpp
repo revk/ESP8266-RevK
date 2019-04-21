@@ -266,18 +266,25 @@ upgrade ()
    char *host = otahost;
    if (!*host)
       host = OTAHOST;           // Default
+   ESPhttpUpdate.rebootOnUpdate (false);        // We'll do the reboot
    if (otausetls)
    {
+      debug ("Upgrade secure\n");
+      delay (100);
       WiFiClientSecure client = myleclient ();
       client.setLocalPortStart (32768 + ESP8266TrueRandom.random (16384));
-      if (ESPhttpUpdate.update (client, host, 443, url))
+      if (ESPhttpUpdate.update (client, String (host), 443, String (url)))
          Serial.println (ESPhttpUpdate.getLastErrorString ());
    } else
    {
+      debug ("Upgrade insecure\n");
+      delay (100);
       WiFiClient client;
-      if (ESPhttpUpdate.update (client, host, 80, url))
+      if (ESPhttpUpdate.update (client, String (host), 80, String (url)))
          Serial.println (ESPhttpUpdate.getLastErrorString ());
    }
+   debug ("Upgrade finished\n");
+   delay (100);
    return false;                // Should not get here
 }
 
@@ -399,7 +406,7 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const
       appnamelen = l - i;
    }
    appversion = myappversion;
-   debug ("Application start %.*s\n", appnamelen, appname);
+   debug ("Application start %.*s %s\n", appnamelen, appname, appversion);
    loadsettings ();
    otausetls = usetls;
    if (!*otahost && myotahost)
@@ -439,7 +446,6 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const
       mqtt.setServer (mqtthost, atoi (mqttport));
       mqtt.setCallback (message);
    }
-   sntp_set_timezone (0);       // UTC please
    debug ("RevK init done\n");
 }
 
@@ -477,6 +483,7 @@ boolean ESP8266RevK::loop ()
          sntpbackoff *= 2;
       sntp_stop ();
       sntp_init ();
+      //sntp_set_timezone (0);       // UTC please
    }
    // Save settings
    if (settingsupdate && settingsupdate < now)
