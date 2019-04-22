@@ -59,6 +59,7 @@ f(mqttsha1,20)			\
 s(mqttuser,32,"")		\
 s(mqttpass,32,"")		\
 s(mqttport,10,"1883")		\
+s(ntphost,127,"")		\
 s(prefixcmnd,10,"cmnd")		\
 s(prefixstat,10,"stat")		\
 s(prefixtele,10,"tele")		\
@@ -390,7 +391,8 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const
       mqtt.setCallback (message);
    }
    sntp_set_timezone (0);       // UTC please
-   // TOD ntphost
+   if (*ntphost)
+      sntp_setservername (0, ntphost);
    debug ("RevK init done\n");
 }
 
