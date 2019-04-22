@@ -27,8 +27,8 @@ extern "C"
 }
 
               // Local functions
-static WiFiClient myclient ();
-static WiFiClientSecure myclientTLS (byte * sha1 = NULL);
+static void myclient (WiFiClient &);
+static void myclientTLS (WiFiClientSecure &, byte * sha1 = NULL);
 static boolean pub (const char *prefix, const char *suffix, const char *fmt, ...);
 boolean savesettings ();
 boolean applysetting (const char *name, const byte * value, size_t len);
@@ -40,6 +40,8 @@ static int appnamelen = 4;      // May be truncated
 static boolean do_restart = false;      // Do a restart in main loop cleanly
 static boolean do_upgrade = false;      // Do an OTA upgrade
 static boolean otausetls = true;        // Use TLS for OTA (only set in constructor)
+static WiFiClientSecure mqttclientsecure;
+static WiFiClient mqttclient;
 
    // Settings used here
 #define	OTAHOST			"excalibur.bec.aa.net.uk"       // Default OTA host
@@ -194,27 +196,28 @@ upgrade ()
    ESPhttpUpdate.rebootOnUpdate (false);        // We 'll do the reboot
    if (otasha1_set)
    {
-      debug ("Upgrade secure\n");
+      debug ("Upgrade secure %s\n", host);
       delay (100);
-      WiFiClientSecure client = myclientTLS (otasha1);
+      WiFiClientSecure client;
+      myclientTLS (client, otasha1);
       if (ESPhttpUpdate.update (client, String (host), 443, String (url)))
          Serial.println (ESPhttpUpdate.getLastErrorString ());
    } else if (otausetls)
    {
-      debug ("Upgrade secure (LE)\n");
+      debug ("Upgrade secure (LE) %s\n", host);
       delay (100);
-      WiFiClientSecure client = myclientTLS ();
-      if (ESPhttpUpdate.update (client, String (host), 443, String (url)))
-         Serial.println (ESPhttpUpdate.getLastErrorString ());
+      WiFiClientSecure client;
+      myclientTLS (client);
+      ESPhttpUpdate.update (client, String (host), 443, String (url));
    } else
    {
-      debug ("Upgrade insecure\n");
+      debug ("Upgrade insecure %s\n", host);
       delay (100);
       WiFiClient client;
-      if (ESPhttpUpdate.update (client, String (host), 80, String (url)))
-         Serial.println (ESPhttpUpdate.getLastErrorString ());
+      myclient (client);
+      ESPhttpUpdate.update (client, String (host), 80, String (url));
    }
-   debug ("Upgrade finished\n");
+   debug ("Upgrade done: %s\n", ESPhttpUpdate.getLastErrorString ().c_str ());
    delay (100);
    ESP.restart ();              // Boot
    return false;                // Should not get here
@@ -376,15 +379,16 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const
    }
    if (*mqtthost)
    {
-      debug ("MQTT %s\n", mqtthost);
       mqtt = PubSubClient ();
       if (mqttsha1_set)
       {
-         static WiFiClientSecure mqttclient = myclientTLS (mqttsha1);
-         mqtt.setClient (mqttclient);
+         debug ("MQTT secure %s\n", mqtthost);
+         myclientTLS (mqttclientsecure, mqttsha1);
+         mqtt.setClient (mqttclientsecure);
       } else
       {
-         static WiFiClient mqttclient = myclient ();
+         debug ("MQTT insecure %s\n", mqtthost);
+         //myclient (mqttclient);
          mqtt.setClient (mqttclient);
       }
       mqtt.setServer (mqtthost, atoi (mqttport));
@@ -567,19 +571,16 @@ ESP8266RevK::restart ()
    do_restart = true;
 }
 
-static WiFiClient
-myclient ()
+static void
+myclient (WiFiClient & client)
 {
-   WiFiClient client;
-   client.setLocalPortStart (32768 + ESP8266TrueRandom.random (16384));
-   return client;
+   client.setLocalPortStart (60000 + ESP8266TrueRandom.random (5000));
 }
 
-static WiFiClientSecure
-myclientTLS (byte * sha1)
+static void
+myclientTLS (WiFiClientSecure & client, byte * sha1)
 {
-   WiFiClientSecure client;
-   client.setLocalPortStart (32768 + ESP8266TrueRandom.random (16384));
+   client.setLocalPortStart (60000 + ESP8266TrueRandom.random (5000));
    if (sha1)
       client.setFingerprint (sha1);
    else
@@ -589,17 +590,16 @@ myclientTLS (byte * sha1)
    }
    static BearSSL::Session sess;
    client.setSession (&sess);
-   return client;
 }
 
-WiFiClient
-ESP8266RevK::client ()
+void
+ESP8266RevK::client (WiFiClient & client)
 {
-   return myclient ();
+   return myclient (client);
 }
 
-WiFiClientSecure
-ESP8266RevK::clientTLS (byte * sha1)
+void
+ESP8266RevK::clientTLS (WiFiClientSecure & client, byte * sha1)
 {
-   return myclientTLS (sha1);
+   return myclientTLS (client, sha1);
 }
