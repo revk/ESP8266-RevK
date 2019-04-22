@@ -1,12 +1,9 @@
-// RevK applicatioon framework
 // See include file for more details
 //
-// TODO :-
+// TODO: -
 // Fallback MQTT
-// TLS MQTT (fingerprint)
 
 #include <ESP8266RevK.h>
-
 #ifdef REVKDEBUG
 #define debug(...) Serial.printf(__VA_ARGS__)
 #else
@@ -23,31 +20,34 @@
 #include <ESP8266httpUpdate.h>
 #include <ESP8266TrueRandom.h>
 #include <EEPROM.h>
+#include "lecert.h"
 extern "C"
 {
 #include "sntp.h"
 }
 
-// Local functions
-static WiFiClientSecure myleclient ();
+              // Local functions
+static WiFiClient myclient ();
+static WiFiClientSecure myclientTLS (byte * sha1 = NULL);
 static boolean pub (const char *prefix, const char *suffix, const char *fmt, ...);
 boolean savesettings ();
 boolean applysetting (const char *name, const byte * value, size_t len);
 
 // App name set by constructor, expceted to be static string
 static const char *appname = "RevK";    // System set from constructor as literal string
-static const char *appversion = NULL;   //  System set from constructor as literal string
+static const char *appversion = NULL;   // System set from constructor as literal string
 static int appnamelen = 4;      // May be truncated
 static boolean do_restart = false;      // Do a restart in main loop cleanly
 static boolean do_upgrade = false;      // Do an OTA upgrade
 static boolean otausetls = true;        // Use TLS for OTA (only set in constructor)
 
-// Settings used here
+   // Settings used here
 #define	OTAHOST			"excalibur.bec.aa.net.uk"       // Default OTA host
 #define	MAXSETTINGS 1024        // EEPROM storage
 #define	settings		\
 s(hostname,32,"")		\
 s(otahost,128,"")		\
+f(otasha1,20)			\
 s(wifissid,32,"IoT")		\
 s(wifipass,32,"security")	\
 s(wifissid2,32,"")		\
@@ -55,6 +55,7 @@ s(wifipass2,32,"")		\
 s(wifissid3,32,"")		\
 s(wifipass3,32,"")		\
 s(mqtthost,128,"mqtt.iot")	\
+f(mqttsha1,20)			\
 s(mqttuser,32,"")		\
 s(mqttpass,32,"")		\
 s(mqttport,10,"1883")		\
@@ -64,87 +65,10 @@ s(prefixtele,10,"tele")		\
 s(prefixerror,10,"error")	\
 s(prefixsetting,10,"setting")	\
 
-// LetsEncrypt IdenTrust DST Root CA X3 certificate valid until 20210930
-// https://letsencrypt.org/certificates/
-// Downloaded from https://www.identrust.com/support/downloads
-
-#define TLS_CA_CERT_LENGTH 846  // Letsencrypt
-#define TLS_CA_CERT { \
-    0x30, 0x82, 0x03, 0x4a, 0x30, 0x82, 0x02, 0x32, 0xa0, 0x03, 0x02, 0x01, \
-    0x02, 0x02, 0x10, 0x44, 0xaf, 0xb0, 0x80, 0xd6, 0xa3, 0x27, 0xba, 0x89, \
-    0x30, 0x39, 0x86, 0x2e, 0xf8, 0x40, 0x6b, 0x30, 0x0d, 0x06, 0x09, 0x2a, \
-    0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x05, 0x05, 0x00, 0x30, 0x3f, \
-    0x31, 0x24, 0x30, 0x22, 0x06, 0x03, 0x55, 0x04, 0x0a, 0x13, 0x1b, 0x44, \
-    0x69, 0x67, 0x69, 0x74, 0x61, 0x6c, 0x20, 0x53, 0x69, 0x67, 0x6e, 0x61, \
-    0x74, 0x75, 0x72, 0x65, 0x20, 0x54, 0x72, 0x75, 0x73, 0x74, 0x20, 0x43, \
-    0x6f, 0x2e, 0x31, 0x17, 0x30, 0x15, 0x06, 0x03, 0x55, 0x04, 0x03, 0x13, \
-    0x0e, 0x44, 0x53, 0x54, 0x20, 0x52, 0x6f, 0x6f, 0x74, 0x20, 0x43, 0x41, \
-    0x20, 0x58, 0x33, 0x30, 0x1e, 0x17, 0x0d, 0x30, 0x30, 0x30, 0x39, 0x33, \
-    0x30, 0x32, 0x31, 0x31, 0x32, 0x31, 0x39, 0x5a, 0x17, 0x0d, 0x32, 0x31, \
-    0x30, 0x39, 0x33, 0x30, 0x31, 0x34, 0x30, 0x31, 0x31, 0x35, 0x5a, 0x30, \
-    0x3f, 0x31, 0x24, 0x30, 0x22, 0x06, 0x03, 0x55, 0x04, 0x0a, 0x13, 0x1b, \
-    0x44, 0x69, 0x67, 0x69, 0x74, 0x61, 0x6c, 0x20, 0x53, 0x69, 0x67, 0x6e, \
-    0x61, 0x74, 0x75, 0x72, 0x65, 0x20, 0x54, 0x72, 0x75, 0x73, 0x74, 0x20, \
-    0x43, 0x6f, 0x2e, 0x31, 0x17, 0x30, 0x15, 0x06, 0x03, 0x55, 0x04, 0x03, \
-    0x13, 0x0e, 0x44, 0x53, 0x54, 0x20, 0x52, 0x6f, 0x6f, 0x74, 0x20, 0x43, \
-    0x41, 0x20, 0x58, 0x33, 0x30, 0x82, 0x01, 0x22, 0x30, 0x0d, 0x06, 0x09, \
-    0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01, 0x05, 0x00, 0x03, \
-    0x82, 0x01, 0x0f, 0x00, 0x30, 0x82, 0x01, 0x0a, 0x02, 0x82, 0x01, 0x01, \
-    0x00, 0xdf, 0xaf, 0xe9, 0x97, 0x50, 0x08, 0x83, 0x57, 0xb4, 0xcc, 0x62, \
-    0x65, 0xf6, 0x90, 0x82, 0xec, 0xc7, 0xd3, 0x2c, 0x6b, 0x30, 0xca, 0x5b, \
-    0xec, 0xd9, 0xc3, 0x7d, 0xc7, 0x40, 0xc1, 0x18, 0x14, 0x8b, 0xe0, 0xe8, \
-    0x33, 0x76, 0x49, 0x2a, 0xe3, 0x3f, 0x21, 0x49, 0x93, 0xac, 0x4e, 0x0e, \
-    0xaf, 0x3e, 0x48, 0xcb, 0x65, 0xee, 0xfc, 0xd3, 0x21, 0x0f, 0x65, 0xd2, \
-    0x2a, 0xd9, 0x32, 0x8f, 0x8c, 0xe5, 0xf7, 0x77, 0xb0, 0x12, 0x7b, 0xb5, \
-    0x95, 0xc0, 0x89, 0xa3, 0xa9, 0xba, 0xed, 0x73, 0x2e, 0x7a, 0x0c, 0x06, \
-    0x32, 0x83, 0xa2, 0x7e, 0x8a, 0x14, 0x30, 0xcd, 0x11, 0xa0, 0xe1, 0x2a, \
-    0x38, 0xb9, 0x79, 0x0a, 0x31, 0xfd, 0x50, 0xbd, 0x80, 0x65, 0xdf, 0xb7, \
-    0x51, 0x63, 0x83, 0xc8, 0xe2, 0x88, 0x61, 0xea, 0x4b, 0x61, 0x81, 0xec, \
-    0x52, 0x6b, 0xb9, 0xa2, 0xe2, 0x4b, 0x1a, 0x28, 0x9f, 0x48, 0xa3, 0x9e, \
-    0x0c, 0xda, 0x09, 0x8e, 0x3e, 0x17, 0x2e, 0x1e, 0xdd, 0x20, 0xdf, 0x5b, \
-    0xc6, 0x2a, 0x8a, 0xab, 0x2e, 0xbd, 0x70, 0xad, 0xc5, 0x0b, 0x1a, 0x25, \
-    0x90, 0x74, 0x72, 0xc5, 0x7b, 0x6a, 0xab, 0x34, 0xd6, 0x30, 0x89, 0xff, \
-    0xe5, 0x68, 0x13, 0x7b, 0x54, 0x0b, 0xc8, 0xd6, 0xae, 0xec, 0x5a, 0x9c, \
-    0x92, 0x1e, 0x3d, 0x64, 0xb3, 0x8c, 0xc6, 0xdf, 0xbf, 0xc9, 0x41, 0x70, \
-    0xec, 0x16, 0x72, 0xd5, 0x26, 0xec, 0x38, 0x55, 0x39, 0x43, 0xd0, 0xfc, \
-    0xfd, 0x18, 0x5c, 0x40, 0xf1, 0x97, 0xeb, 0xd5, 0x9a, 0x9b, 0x8d, 0x1d, \
-    0xba, 0xda, 0x25, 0xb9, 0xc6, 0xd8, 0xdf, 0xc1, 0x15, 0x02, 0x3a, 0xab, \
-    0xda, 0x6e, 0xf1, 0x3e, 0x2e, 0xf5, 0x5c, 0x08, 0x9c, 0x3c, 0xd6, 0x83, \
-    0x69, 0xe4, 0x10, 0x9b, 0x19, 0x2a, 0xb6, 0x29, 0x57, 0xe3, 0xe5, 0x3d, \
-    0x9b, 0x9f, 0xf0, 0x02, 0x5d, 0x02, 0x03, 0x01, 0x00, 0x01, 0xa3, 0x42, \
-    0x30, 0x40, 0x30, 0x0f, 0x06, 0x03, 0x55, 0x1d, 0x13, 0x01, 0x01, 0xff, \
-    0x04, 0x05, 0x30, 0x03, 0x01, 0x01, 0xff, 0x30, 0x0e, 0x06, 0x03, 0x55, \
-    0x1d, 0x0f, 0x01, 0x01, 0xff, 0x04, 0x04, 0x03, 0x02, 0x01, 0x06, 0x30, \
-    0x1d, 0x06, 0x03, 0x55, 0x1d, 0x0e, 0x04, 0x16, 0x04, 0x14, 0xc4, 0xa7, \
-    0xb1, 0xa4, 0x7b, 0x2c, 0x71, 0xfa, 0xdb, 0xe1, 0x4b, 0x90, 0x75, 0xff, \
-    0xc4, 0x15, 0x60, 0x85, 0x89, 0x10, 0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, \
-    0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x05, 0x05, 0x00, 0x03, 0x82, 0x01, \
-    0x01, 0x00, 0xa3, 0x1a, 0x2c, 0x9b, 0x17, 0x00, 0x5c, 0xa9, 0x1e, 0xee, \
-    0x28, 0x66, 0x37, 0x3a, 0xbf, 0x83, 0xc7, 0x3f, 0x4b, 0xc3, 0x09, 0xa0, \
-    0x95, 0x20, 0x5d, 0xe3, 0xd9, 0x59, 0x44, 0xd2, 0x3e, 0x0d, 0x3e, 0xbd, \
-    0x8a, 0x4b, 0xa0, 0x74, 0x1f, 0xce, 0x10, 0x82, 0x9c, 0x74, 0x1a, 0x1d, \
-    0x7e, 0x98, 0x1a, 0xdd, 0xcb, 0x13, 0x4b, 0xb3, 0x20, 0x44, 0xe4, 0x91, \
-    0xe9, 0xcc, 0xfc, 0x7d, 0xa5, 0xdb, 0x6a, 0xe5, 0xfe, 0xe6, 0xfd, 0xe0, \
-    0x4e, 0xdd, 0xb7, 0x00, 0x3a, 0xb5, 0x70, 0x49, 0xaf, 0xf2, 0xe5, 0xeb, \
-    0x02, 0xf1, 0xd1, 0x02, 0x8b, 0x19, 0xcb, 0x94, 0x3a, 0x5e, 0x48, 0xc4, \
-    0x18, 0x1e, 0x58, 0x19, 0x5f, 0x1e, 0x02, 0x5a, 0xf0, 0x0c, 0xf1, 0xb1, \
-    0xad, 0xa9, 0xdc, 0x59, 0x86, 0x8b, 0x6e, 0xe9, 0x91, 0xf5, 0x86, 0xca, \
-    0xfa, 0xb9, 0x66, 0x33, 0xaa, 0x59, 0x5b, 0xce, 0xe2, 0xa7, 0x16, 0x73, \
-    0x47, 0xcb, 0x2b, 0xcc, 0x99, 0xb0, 0x37, 0x48, 0xcf, 0xe3, 0x56, 0x4b, \
-    0xf5, 0xcf, 0x0f, 0x0c, 0x72, 0x32, 0x87, 0xc6, 0xf0, 0x44, 0xbb, 0x53, \
-    0x72, 0x6d, 0x43, 0xf5, 0x26, 0x48, 0x9a, 0x52, 0x67, 0xb7, 0x58, 0xab, \
-    0xfe, 0x67, 0x76, 0x71, 0x78, 0xdb, 0x0d, 0xa2, 0x56, 0x14, 0x13, 0x39, \
-    0x24, 0x31, 0x85, 0xa2, 0xa8, 0x02, 0x5a, 0x30, 0x47, 0xe1, 0xdd, 0x50, \
-    0x07, 0xbc, 0x02, 0x09, 0x90, 0x00, 0xeb, 0x64, 0x63, 0x60, 0x9b, 0x16, \
-    0xbc, 0x88, 0xc9, 0x12, 0xe6, 0xd2, 0x7d, 0x91, 0x8b, 0xf9, 0x3d, 0x32, \
-    0x8d, 0x65, 0xb4, 0xe9, 0x7c, 0xb1, 0x57, 0x76, 0xea, 0xc5, 0xb6, 0x28, \
-    0x39, 0xbf, 0x15, 0x65, 0x1c, 0xc8, 0xf6, 0x77, 0x96, 0x6a, 0x0a, 0x8d, \
-    0x77, 0x0b, 0xd8, 0x91, 0x0b, 0x04, 0x8e, 0x07, 0xdb, 0x29, 0xb6, 0x0a, \
-    0xee, 0x9d, 0x82, 0x35, 0x35, 0x10 }
-
-
 #define s(name,len,def) static char name[len+1]=def;
+#define f(name,len) static byte name[len]={};boolean name##_set=false;
 settings
+#undef 	f
 #undef 	s
 typedef struct setting_s setting_t;
 struct setting_s
@@ -156,17 +80,15 @@ struct setting_s
 };
 static setting_t *set = NULL;   // The settings
 static long settingsupdate = 0; // When to do a settings update (delay after settings changed, 0 if no change)
-
-// Local variables
+      // Local variables
 static ESP8266WiFiMulti WiFiMulti;
-static WiFiClient mqttclient;
 static PubSubClient mqtt;
 
 boolean
 savesettings ()
 {
    if (!settingsupdate)
-      return true;              // OK (not saved)
+      return true;              // OK(not saved)
    EEPROM.begin (MAXSETTINGS);
    unsigned int addr = 0,
       i,
@@ -235,9 +157,11 @@ loadsettings ()
       if (l >= sizeof (name))
       {                         // Bad name, skip
          debug ("Bad name len to read (%d)\n", l);
-         addr += l;             // Skip name
+         addr += l;
+         //Skip name
          l = EEPROM.read (addr++);
-         addr += l;             // Skip value
+         addr += l;
+         //Skip value
          continue;
       }
       for (i = 0; i < l; i++)
@@ -266,13 +190,19 @@ upgrade ()
    char *host = otahost;
    if (!*host)
       host = OTAHOST;           // Default
-   ESPhttpUpdate.rebootOnUpdate (false);        // We'll do the reboot
-   if (otausetls)
+   ESPhttpUpdate.rebootOnUpdate (false);        // We 'll do the reboot
+   if (otasha1_set)
    {
       debug ("Upgrade secure\n");
       delay (100);
-      WiFiClientSecure client = myleclient ();
-      client.setLocalPortStart (32768 + ESP8266TrueRandom.random (16384));
+      WiFiClientSecure client = myclientTLS (otasha1);
+      if (ESPhttpUpdate.update (client, String (host), 443, String (url)))
+         Serial.println (ESPhttpUpdate.getLastErrorString ());
+   } else if (otausetls)
+   {
+      debug ("Upgrade secure (LE)\n");
+      delay (100);
+      WiFiClientSecure client = myclientTLS ();
       if (ESPhttpUpdate.update (client, String (host), 443, String (url)))
          Serial.println (ESPhttpUpdate.getLastErrorString ());
    } else
@@ -285,6 +215,7 @@ upgrade ()
    }
    debug ("Upgrade finished\n");
    delay (100);
+   ESP.restart ();              // Boot
    return false;                // Should not get here
 }
 
@@ -292,7 +223,9 @@ boolean
 localsetting (const char *name, const byte * value, size_t len)
 {                               // Apply a local setting
 #define s(n,l,d) if(!strcasecmp(name,#n)){if(len>l || (!value&&len))return false;memcpy(n,value,len);n[len]=0;return true;}
+#define f(n,l) if(!strcasecmp(name,#n)){if(len==0){n##_set=false;return true;}else if(len==l){memcpy(n,value,len);n##_set=true;return true;}}
    settings
+#undef f
 #undef s
       return false;
 }
@@ -342,10 +275,10 @@ applysetting (const char *name, const byte * value, size_t len)
       memcpy (s->value, value, len);
       settingsupdate = millis () + 1000;
    } else
-      return false;             // ??
+      return false;             // ?
    if (settingsupdate && !strcasecmp (name, "hostname"))
       do_restart = true;
-   return true;                 // Found (not changed)
+   return true;                 // Found(not changed)
 }
 
 static void
@@ -395,7 +328,8 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const
 #ifdef REVKDEBUG
    Serial.begin (115200);
 #endif
-   {                            // Fudge appname - strip training .whatever. Strip leading whatever/ or whatever\ (windows)
+   {
+      // Fudge appname - strip training.whatever.Strip leading whatever / or whatever \ (windows)
       int i,
         l = strlen (myappname);
       for (i = l; i && myappname[i - 1] != '.' && myappname[i - 1] != '/' && myappname[i - 1] != '\\'; i--);
@@ -431,7 +365,8 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const
          WiFiMulti.addAP (wifissid2, wifipass2);
       if (*wifissid3)
          WiFiMulti.addAP (wifissid3, wifipass3);
-      WiFiMulti.run ();         // See if we can connect
+      WiFiMulti.run ();
+      // See if we can connect
    } else
    {
       WiFi.setAutoConnect (true);
@@ -442,10 +377,20 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const
    {
       debug ("MQTT %s\n", mqtthost);
       mqtt = PubSubClient ();
-      mqtt.setClient (mqttclient);
+      if (mqttsha1_set)
+      {
+         static WiFiClientSecure mqttclient = myclientTLS (mqttsha1);
+         mqtt.setClient (mqttclient);
+      } else
+      {
+         static WiFiClient mqttclient = myclient ();
+         mqtt.setClient (mqttclient);
+      }
       mqtt.setServer (mqtthost, atoi (mqttport));
       mqtt.setCallback (message);
    }
+   sntp_set_timezone (0);       // UTC please
+   // TOD ntphost
    debug ("RevK init done\n");
 }
 
@@ -457,18 +402,15 @@ boolean ESP8266RevK::loop ()
    {
       savesettings ();
       pub (prefixstat, "restart", "Restarting");
-      mqttclient.flush ();
-      mqttclient.stop ();
+      mqtt.disconnect ();
       ESP.restart ();
       return false;             // Uh
    }
    if (do_upgrade)
    {
       pub (prefixstat, "upgrade", "OTA upgrade %s", otahost);
-      mqttclient.flush ();
-      mqttclient.stop ();
+      mqtt.disconnect ();
       upgrade ();
-      ESP.restart ();           // Should not be needed
       return false;             // Uh
    }
    // More aggressive SNTP
@@ -483,7 +425,6 @@ boolean ESP8266RevK::loop ()
          sntpbackoff *= 2;
       sntp_stop ();
       sntp_init ();
-      //sntp_set_timezone (0);       // UTC please
    }
    // Save settings
    if (settingsupdate && settingsupdate < now)
@@ -493,11 +434,12 @@ boolean ESP8266RevK::loop ()
    {
       sntpbackoff = 100;
       sntptry = now;
-      return false;             // No wifi, not a lot more we can do.
+      return false;             // No wifi, not a lot more we can do
    }
    // MQTT reconnnect
    static long
-      mqttretry = 0;            // Note, signed to allow for wrapping millis
+      mqttretry = 0;
+   // Note, signed to allow for wrapping millis
    if (*mqtthost && !mqtt.loop () && (int) (mqttretry - now) < 0)
    {
       static long
@@ -509,13 +451,13 @@ boolean ESP8266RevK::loop ()
       if (mqtt.connect (hostname, mqttuser, mqttpass, topic, MQTTQOS1, true, "Offline"))
       {
          debug ("MQTT ok\n");
-         /* Worked */
+         // Worked
          mqttbackoff = 1000;
          mqtt.publish (topic, appversion ? : "Online", true);   // LWT
-         /* Specific device */
+         // Specific device
          snprintf (topic, sizeof (topic), "+/%.*s/%s/#", appnamelen, appname, hostname);
          mqtt.subscribe (topic);
-         /* All devices */
+         // All devices
          snprintf (topic, sizeof (topic), "+/%.*s/*/#", appnamelen, appname);
          mqtt.subscribe (topic);
       } else if (mqttbackoff < 300000)
@@ -558,87 +500,104 @@ pub (const char *prefix, const char *suffix, const char *fmt, ...)
    return ret;
 }
 
-boolean ESP8266RevK::stat (const char *suffix, const char *fmt, ...)
+boolean
+ESP8266RevK::stat (const char *suffix, const char *fmt, ...)
 {
-   va_list
-      ap;
+   va_list ap;
    va_start (ap, fmt);
-   boolean
-      ret = pubap (prefixstat, suffix, fmt, ap);
+   boolean ret = pubap (prefixstat, suffix, fmt, ap);
    va_end (ap);
    return ret;
 }
 
-boolean ESP8266RevK::tele (const char *suffix, const char *fmt, ...)
+boolean
+ESP8266RevK::tele (const char *suffix, const char *fmt, ...)
 {
-   va_list
-      ap;
+   va_list ap;
    va_start (ap, fmt);
-   boolean
-      ret = pubap (prefixtele, suffix, fmt, ap);
+   boolean ret = pubap (prefixtele, suffix, fmt, ap);
    va_end (ap);
    return ret;
 }
 
-boolean ESP8266RevK::error (const char *suffix, const char *fmt, ...)
+boolean
+ESP8266RevK::error (const char *suffix, const char *fmt, ...)
 {
-   va_list
-      ap;
+   va_list ap;
    va_start (ap, fmt);
-   boolean
-      ret = pubap (prefixerror, suffix, fmt, ap);
+   boolean ret = pubap (prefixerror, suffix, fmt, ap);
    va_end (ap);
    return ret;
 }
 
-boolean ESP8266RevK::pub (const char *prefix, const char *suffix, const char *fmt, ...)
+boolean
+ESP8266RevK::pub (const char *prefix, const char *suffix, const char *fmt, ...)
 {
-   va_list
-      ap;
+   va_list ap;
    va_start (ap, fmt);
-   boolean
-      ret = pubap (prefix, suffix, fmt, ap);
+   boolean ret = pubap (prefix, suffix, fmt, ap);
    va_end (ap);
    return ret;
 }
 
-boolean ESP8266RevK::setting (const char *name, const char *value)
+boolean
+ESP8266RevK::setting (const char *name, const char *value)
 {
    return applysetting (name, (const byte *) value, strlen (value));
 }
 
-boolean ESP8266RevK::setting (const char *name, const byte * value, size_t len)
-{                               // Set a setting
+boolean
+ESP8266RevK::setting (const char *name, const byte * value, size_t len)
+{
+   // Set a setting
    return applysetting (name, value, len);
 }
 
-boolean ESP8266RevK::ota ()
+boolean
+ESP8266RevK::ota ()
 {
    do_upgrade = true;
 }
 
-boolean ESP8266RevK::restart ()
+boolean
+ESP8266RevK::restart ()
 {
    do_restart = true;
 }
 
-static
-   WiFiClientSecure
-myleclient ()
+static WiFiClient
+myclient ()
 {
-   static
-      BearSSL::Session
-      sess;
-   WiFiClientSecure
-      client;
-   unsigned char
-      tls_ca_cert[] = TLS_CA_CERT;
-   client.setCACert (tls_ca_cert, TLS_CA_CERT_LENGTH);
+   WiFiClient client;
+   client.setLocalPortStart (32768 + ESP8266TrueRandom.random (16384));
+   return client;
+}
+
+static WiFiClientSecure
+myclientTLS (byte * sha1)
+{
+   WiFiClientSecure client;
+   client.setLocalPortStart (32768 + ESP8266TrueRandom.random (16384));
+   if (sha1)
+      client.setFingerprint (sha1);
+   else
+   {
+      unsigned char tls_ca_cert[] = TLS_CA_CERT;
+      client.setCACert (tls_ca_cert, TLS_CA_CERT_LENGTH);
+   }
+   static BearSSL::Session sess;
    client.setSession (&sess);
    return client;
 }
 
-WiFiClientSecure ESP8266RevK::leclient ()
+WiFiClient
+ESP8266RevK::client ()
 {
-   return myleclient ();
+   return myclient ();
+}
+
+WiFiClientSecure
+ESP8266RevK::clientTLS (byte * sha1)
+{
+   return myclientTLS (sha1);
 }
