@@ -45,7 +45,6 @@ static WiFiClient mqttclient;
 
    // Settings used here
 #define	OTAHOST			"excalibur.bec.aa.net.uk"       // Default OTA host
-#define	MAXSETTINGS 1024        // EEPROM storage
 #define	settings		\
 s(hostname,32,"")		\
 s(otahost,128,"")		\
@@ -87,16 +86,24 @@ static long settingsupdate = 0; // When to do a settings update (delay after set
 static ESP8266WiFiMulti WiFiMulti;
 static PubSubClient mqtt;
 
+#define	MAXEEPROM 1024          // EEPROM storage
+const char *eepromsig = "RevK";
+
 boolean
 savesettings ()
 {
    if (!settingsupdate)
       return true;              // OK(not saved)
-   EEPROM.begin (MAXSETTINGS);
+   if (!appnamelen)
+      return false;             // No app name, minimal load to load app
+   EEPROM.begin (MAXEEPROM);
    unsigned int addr = 0,
       i,
       l;
    EEPROM.write (addr++, 0);
+   for (i = 0; i < sizeof (eepromsig) - 1; i++)
+      EEPROM.write (addr++, eepromsig[i]);
+   EEPROM.write (addr++, appnamelen);
    for (i = 0; i < appnamelen; i++)
       EEPROM.write (addr++, appname[i]);
    setting_t *s;
@@ -135,21 +142,27 @@ loadsettings ()
    unsigned int addr = 0,
       i,
       l;
-   EEPROM.begin (MAXSETTINGS);
+   EEPROM.begin (MAXEEPROM);
+   i = 0;
    l = EEPROM.read (addr++);
-   if (l != appnamelen)
+   if (l == sizeof (eepromsig) - 1)
+      for (i = 0; i < sizeof (eepromsig) - 1 && EEPROM.read (addr++) == eepromsig[i]; i++);
+   if (!i || i != sizeof (eepromsig) - 1)
    {
+      settingsupdate = millis () + 1;   // Save settings
       debug ("EEPROM not set\n");
       EEPROM.end ();
       return false;             // Check app name
    }
-   for (i = 0; i < l; i++)
-      if (EEPROM.read (addr++) != appname[i])
-      {
-         debug ("EEPROM not set\n");
-         EEPROM.end ();
-         return false;
-      }
+   i = 0;
+   if (l == appnamelen)
+      for (i = 0; i < appnamelen && EEPROM.read (addr++) == appname[i]; i++);
+   if (!i || i != appnamelen)
+   {
+      debug ("EEPROM different app\n");
+      EEPROM.end ();
+      return false;             // Check app name
+   }
    char name[33];
    byte value[257];
    while (1)
@@ -189,7 +202,34 @@ upgrade ()
    debug ("Upgrade\n");
    savesettings ();
    char url[200];
-   snprintf (url, sizeof (url), "/%.*s.ino." BOARD ".bin", appnamelen, appname);
+   {
+      int p = 0,
+         e = sizeof (url) - 1;
+      url[p++] = '/';
+      if (appnamelen && p < e)
+         snprintf (url + p, e - p, "%.*s", appnamelen, appname);
+      else
+      {
+         //Check flash for saved app name
+         EEPROM.begin (MAXEEPROM);
+int addr=0;
+         int l = EEPROM.read (addr++),
+            i;
+         if (l)
+         {
+            addr += l;
+            l = EEPROM.read (addr++);
+            if (l)
+               for (i = 0; i < l; i++)
+                  if (p < e)
+                     url[p++] = EEPROM.read (addr++);
+         }
+         EEPROM.end ();
+      }
+      if (p < e)
+         p += snprintf (url + p, e - p, "%s", ".ino." BOARD ".bin");
+      url[p] = 0;
+   }
    char *host = otahost;
    if (!*host)
       host = OTAHOST;           // Default
@@ -217,7 +257,7 @@ upgrade ()
       myclient (client);
       ESPhttpUpdate.update (client, String (host), 80, String (url));
    }
-   debug ("Upgrade done: %s\n", ESPhttpUpdate.getLastErrorString ().c_str ());
+   debug ("Upgrade done:%s\n", ESPhttpUpdate.getLastErrorString ().c_str ());
    delay (100);
    ESP.restart ();              // Boot
    return false;                // Should not get here
@@ -466,10 +506,13 @@ boolean ESP8266RevK::loop ()
          // All devices
          snprintf (topic, sizeof (topic), "+/%.*s/*/#", appnamelen, appname);
          mqtt.subscribe (topic);
-      } else if (mqttbackoff < 300000)
+      }
+
+      else if (mqttbackoff < 300000)
          mqttbackoff *= 2;
       mqttretry = now + mqttbackoff;
    }
+
    return true;                 // OK
 }
 
@@ -506,67 +549,67 @@ pub (const char *prefix, const char *suffix, const char *fmt, ...)
    return ret;
 }
 
-boolean
-ESP8266RevK::stat (const char *suffix, const char *fmt, ...)
+boolean ESP8266RevK::stat (const char *suffix, const char *fmt, ...)
 {
-   va_list ap;
+   va_list
+      ap;
    va_start (ap, fmt);
-   boolean ret = pubap (prefixstat, suffix, fmt, ap);
+   boolean
+      ret = pubap (prefixstat, suffix, fmt, ap);
    va_end (ap);
    return ret;
 }
 
-boolean
-ESP8266RevK::tele (const char *suffix, const char *fmt, ...)
+boolean ESP8266RevK::tele (const char *suffix, const char *fmt, ...)
 {
-   va_list ap;
+   va_list
+      ap;
    va_start (ap, fmt);
-   boolean ret = pubap (prefixtele, suffix, fmt, ap);
+   boolean
+      ret = pubap (prefixtele, suffix, fmt, ap);
    va_end (ap);
    return ret;
 }
 
-boolean
-ESP8266RevK::error (const char *suffix, const char *fmt, ...)
+boolean ESP8266RevK::error (const char *suffix, const char *fmt, ...)
 {
-   va_list ap;
+   va_list
+      ap;
    va_start (ap, fmt);
-   boolean ret = pubap (prefixerror, suffix, fmt, ap);
+   boolean
+      ret = pubap (prefixerror, suffix, fmt, ap);
    va_end (ap);
    return ret;
 }
 
-boolean
-ESP8266RevK::pub (const char *prefix, const char *suffix, const char *fmt, ...)
+boolean ESP8266RevK::pub (const char *prefix, const char *suffix, const char *fmt, ...)
 {
-   va_list ap;
+   va_list
+      ap;
    va_start (ap, fmt);
-   boolean ret = pubap (prefix, suffix, fmt, ap);
+   boolean
+      ret = pubap (prefix, suffix, fmt, ap);
    va_end (ap);
    return ret;
 }
 
-boolean
-ESP8266RevK::setting (const char *name, const char *value)
+boolean ESP8266RevK::setting (const char *name, const char *value)
 {
    return applysetting (name, (const byte *) value, strlen (value));
 }
 
-boolean
-ESP8266RevK::setting (const char *name, const byte * value, size_t len)
+boolean ESP8266RevK::setting (const char *name, const byte * value, size_t len)
 {
    // Set a setting
    return applysetting (name, value, len);
 }
 
-boolean
-ESP8266RevK::ota ()
+boolean ESP8266RevK::ota ()
 {
    do_upgrade = true;
 }
 
-boolean
-ESP8266RevK::restart ()
+boolean ESP8266RevK::restart ()
 {
    do_restart = true;
 }
@@ -585,10 +628,13 @@ myclientTLS (WiFiClientSecure & client, byte * sha1)
       client.setFingerprint (sha1);
    else
    {
-      unsigned char tls_ca_cert[] = TLS_CA_CERT;
+      unsigned char
+         tls_ca_cert[] = TLS_CA_CERT;
       client.setCACert (tls_ca_cert, TLS_CA_CERT_LENGTH);
    }
-   static BearSSL::Session sess;
+   static
+      BearSSL::Session
+      sess;
    client.setSession (&sess);
 }
 
