@@ -200,6 +200,7 @@ boolean
 upgrade ()
 {                               // Do OTA upgrade
    debug ("Upgrade\n");
+   // TODO check flash size, etc and load Minimal instead if too big
    savesettings ();
    char url[200];
    {
@@ -513,7 +514,7 @@ ESP8266RevK::loop ()
 }
 
 static boolean
-pubap (const char *prefix, const char *suffix, const char *fmt, va_list ap)
+pubap (const char *prefix, const char *suffix, int qos, boolean retain, const char *fmt, va_list ap)
 {
    if (!*mqtthost)
       return false;             // No MQTT
@@ -534,7 +535,7 @@ pub (const char *prefix, const char *suffix, const char *fmt, ...)
 {
    va_list ap;
    va_start (ap, fmt);
-   boolean ret = pubap (prefix, suffix, fmt, ap);
+   boolean ret = pubap (prefix, suffix, 1, false, fmt, ap);
    va_end (ap);
    return ret;
 }
@@ -544,7 +545,7 @@ ESP8266RevK::stat (const char *suffix, const char *fmt, ...)
 {
    va_list ap;
    va_start (ap, fmt);
-   boolean ret = pubap (prefixstat, suffix, fmt, ap);
+   boolean ret = pubap (prefixstat, suffix, 1, false, fmt, ap);
    va_end (ap);
    return ret;
 }
@@ -554,7 +555,7 @@ ESP8266RevK::tele (const char *suffix, const char *fmt, ...)
 {
    va_list ap;
    va_start (ap, fmt);
-   boolean ret = pubap (prefixtele, suffix, fmt, ap);
+   boolean ret = pubap (prefixtele, suffix, 1, false, fmt, ap);
    va_end (ap);
    return ret;
 }
@@ -564,7 +565,7 @@ ESP8266RevK::error (const char *suffix, const char *fmt, ...)
 {
    va_list ap;
    va_start (ap, fmt);
-   boolean ret = pubap (prefixerror, suffix, fmt, ap);
+   boolean ret = pubap (prefixerror, suffix, 1, false, fmt, ap);
    va_end (ap);
    return ret;
 }
@@ -574,7 +575,17 @@ ESP8266RevK::pub (const char *prefix, const char *suffix, const char *fmt, ...)
 {
    va_list ap;
    va_start (ap, fmt);
-   boolean ret = pubap (prefix, suffix, fmt, ap);
+   boolean ret = pubap (prefix, suffix, 1, false, fmt, ap);
+   va_end (ap);
+   return ret;
+}
+
+boolean
+ESP8266RevK::pub (const char *prefix, const char *suffix, int qos, boolean retain, const char *fmt, ...)
+{
+   va_list ap;
+   va_start (ap, fmt);
+   boolean ret = pubap (prefix, suffix, qos, retain, fmt, ap);
    va_end (ap);
    return ret;
 }

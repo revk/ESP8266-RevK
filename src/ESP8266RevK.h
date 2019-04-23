@@ -56,6 +56,7 @@ class ESP8266RevK : private PubSubClient {
    boolean tele(const char *suffix, const char *fmt=NULL, ...); // Publish tele
    boolean error(const char *suffix, const char *fmt=NULL, ...); // Publish error
    boolean pub(const char *prefix, const char *suffix, const char *fmt=NULL, ...);	// Publish general
+   boolean pub(const char *prefix, const char *suffix, int qos, boolean retain, const char *fmt=NULL, ...);	// Publish general (with qos)
    boolean setting(const char *name,const char*value=NULL); // Apply a setting (gets written to EEPROM)
    boolean setting(const char *name,const byte*value=NULL,size_t len=0); // Apply a setting (gets written to EEPROM)
    boolean ota();	// Do upgrade
