@@ -413,9 +413,10 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const
       // See if we can connect
    } else
    {
-      WiFi.begin (wifissid, wifipass);
+      wifi_set_sleep_type(NONE_SLEEP_T); // TODO some control on this...
       WiFi.setAutoConnect (true);
       WiFi.setAutoReconnect (true);
+      WiFi.begin (wifissid, wifipass);
    }
    if (*mqtthost)
    {
@@ -546,11 +547,11 @@ pubap (const char *prefix, const char *suffix, int qos, boolean retain, const ch
    if (!*mqtthost)
       return false;             // No MQTT
    char
-      temp[256] = {
+      temp[128] = {
    };
    if (fmt)
       vsnprintf (temp, sizeof (temp), fmt, ap);
-   static char topic[101];
+   char topic[101];
    if (suffix)
       snprintf (topic, sizeof (topic), "%s/%.*s/%s/%s", prefix, appnamelen, appname, hostname, suffix);
    else
