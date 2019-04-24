@@ -402,6 +402,8 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const
    debug ("WiFi %s\n", host);
    WiFi.hostname (host);
    WiFi.mode (WIFI_STA);
+   WiFi.setAutoConnect (true);
+   WiFi.setAutoReconnect (true);
    if (*wifissid2 || *wifissid3)
    {
       WiFiMulti.addAP (wifissid, wifipass);
@@ -414,8 +416,6 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const
    } else
    {
       //wifi_set_sleep_type(NONE_SLEEP_T); // TODO some control on this...
-      WiFi.setAutoConnect (true);
-      WiFi.setAutoReconnect (true);
       WiFi.begin (wifissid, wifipass);
    }
    if (*mqtthost)
@@ -514,11 +514,11 @@ boolean ESP8266RevK::loop ()
       snprintf (topic, sizeof (topic), "%s/%.*s/%s", prefixtele, appnamelen, appname, hostname);
       if (mqtt.connect (hostname, mqttuser, mqttpass, topic, MQTTQOS1, true, "Offline"))
       {
-         debug ("MQTT ok\n");
+         debug ("MQTT OK\n");
          // Worked
          mqttretry = 0;
          mqttbackoff = 1000;
-         pub (prefixtele, NULL, "Online %s up %d.%03d",now/1000,now%1000);
+         pub (prefixtele, NULL, "Online %s up %d.%03d", appversion, now / 1000, now % 1000);
          // Specific device
          snprintf (topic, sizeof (topic), "+/%.*s/%s/#", appnamelen, appname, hostname);
          mqtt.subscribe (topic);
@@ -551,7 +551,8 @@ pubap (const char *prefix, const char *suffix, int qos, boolean retain, const ch
    };
    if (fmt)
       vsnprintf (temp, sizeof (temp), fmt, ap);
-   char topic[101];
+   char
+      topic[101];
    if (suffix)
       snprintf (topic, sizeof (topic), "%s/%.*s/%s/%s", prefix, appnamelen, appname, hostname, suffix);
    else
