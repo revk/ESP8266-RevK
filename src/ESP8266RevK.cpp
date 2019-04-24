@@ -413,7 +413,7 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const
       // See if we can connect
    } else
    {
-      wifi_set_sleep_type(NONE_SLEEP_T); // TODO some control on this...
+      //wifi_set_sleep_type(NONE_SLEEP_T); // TODO some control on this...
       WiFi.setAutoConnect (true);
       WiFi.setAutoReconnect (true);
       WiFi.begin (wifissid, wifipass);
@@ -441,8 +441,8 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const
 
 boolean ESP8266RevK::loop ()
 {
-   long
-      now = millis ();          // Use with care as wraps every 49 days - best used signed to allow for wrapping
+   unsigned long
+      now = millis ();          // Use with care as wraps every 49 days
    if (do_restart)
    {
       debug ("Time to do restart");
@@ -518,7 +518,7 @@ boolean ESP8266RevK::loop ()
          // Worked
          mqttretry = 0;
          mqttbackoff = 1000;
-         pub (prefixtele, NULL, "Online %s", appversion);
+         pub (prefixtele, NULL, "Online %s up %d.%03d",now/1000,now%1000);
          // Specific device
          snprintf (topic, sizeof (topic), "+/%.*s/%s/#", appnamelen, appname, hostname);
          mqtt.subscribe (topic);
