@@ -3,7 +3,7 @@
 #include <ESP8266RevK.h>
 
 // Set the OTA host as you require, the rest is set based on filename and date/time
-ESP8266RevK revk(__FILE__, "Build: " __DATE__ " " __TIME__,"ota.revk.uk");
+ESP8266RevK revk(__FILE__, __DATE__ " " __TIME__,"ota.revk.uk");
 
 boolean app_setting(const char *setting, const byte *value, size_t len)
 { // Called for settings retrieved from EEPROM, return true if setting is OK

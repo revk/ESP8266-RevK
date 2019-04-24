@@ -4,7 +4,7 @@
 
 // NULL app name stops it resetting settings
 // If you build, set your own OTA server
-ESP8266RevK revk(NULL, "Build: " __DATE__ " " __TIME__,"ota.revk.uk");
+ESP8266RevK revk(NULL, __DATE__ " " __TIME__,"ota.revk.uk");
 
 boolean app_setting(const char *setting, const byte *value, size_t len)
 { // Called for settings retrieved from EEPROM, return true if setting is OK

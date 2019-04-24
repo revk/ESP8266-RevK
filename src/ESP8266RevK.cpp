@@ -27,7 +27,6 @@ extern "C"
 }
 
               // Local functions
-static void myclient (WiFiClient &);
 static void myclientTLS (WiFiClientSecure &, byte * sha1 = NULL);
 static boolean pub (const char *prefix, const char *suffix, const char *fmt, ...);
 boolean savesettings ();
@@ -129,7 +128,7 @@ savesettings ()
    }
    EEPROM.write (addr++, 0);    // End of settings
    EEPROM.write (0, appnamelen);        // Make settings valid
-   debug ("Settings saved, used %d\n", addr);
+   debug ("Settings saved, used %d/%d bytes\n", addr, MAXEEPROM);
    EEPROM.end ();
    settingsupdate = 0;
    return true;                 // Done
@@ -149,7 +148,7 @@ loadsettings ()
       for (i = 0; i < sizeof (eepromsig) - 1 && EEPROM.read (addr++) == eepromsig[i]; i++);
    if (!i || i != sizeof (eepromsig) - 1)
    {
-      settingsupdate = millis () + 1;   // Save settings
+      settingsupdate = (millis ()? : 1);        // Save settings
       debug ("EEPROM not set\n");
       EEPROM.end ();
       return false;             // Check app name
@@ -255,7 +254,6 @@ upgrade ()
       debug ("Upgrade insecure %s\n", host);
       delay (100);
       WiFiClient client;
-      myclient (client);
       ESPhttpUpdate.update (client, String (host), 80, String (url));
    }
    debug ("Upgrade done:%s\n", ESPhttpUpdate.getLastErrorString ().c_str ());
@@ -299,7 +297,7 @@ applysetting (const char *name, const byte * value, size_t len)
       memcpy (s->value, value, len);
       s->next = set;
       set = s;
-      settingsupdate = millis () + 1000;
+      settingsupdate = ((millis () + 1000) ? : 1);
    } else if (!len)
    {                            // Remove setting
       setting_t **ss = &set;
@@ -310,7 +308,7 @@ applysetting (const char *name, const byte * value, size_t len)
       if (s->value)
          free (s->value);
       free (s);
-      settingsupdate = millis () + 1000;
+      settingsupdate = ((millis () + 1000) ? : 1);
    } else if (s->len != len || memcpy (s->value, value, len))
    {                            // Change value
       if (s->value)
@@ -318,7 +316,7 @@ applysetting (const char *name, const byte * value, size_t len)
       s->value = (byte *) malloc (len);
       s->len = len;
       memcpy (s->value, value, len);
-      settingsupdate = millis () + 1000;
+      settingsupdate = ((millis () + 1000) ? : 1);
    } else
       return false;             // ?
    if (settingsupdate && !strcasecmp (name, "hostname"))
@@ -344,7 +342,7 @@ message (const char *topic, byte * payload, unsigned int len)
    if (p && !strncasecmp (topic, prefixcmnd, l) && topic[l] == '/')
    {
       if (!strcasecmp (p, "upgrade"))
-      {                         // OTA opgrade
+      {                         // OTA upgrade
          do_upgrade = true;
          return;
       }
@@ -430,7 +428,6 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const
       } else
       {
          debug ("MQTT insecure %s\n", mqtthost);
-         //myclient (mqttclient);
          mqtt.setClient (mqttclient);
       }
       mqtt.setServer (mqtthost, *mqttport ? atoi (mqttport) : mqttsha1_set ? 8883 : 1883);
@@ -448,39 +445,59 @@ ESP8266RevK::loop ()
    long now = millis ();        // Use with care as wraps every 49 days - best used signed to allow for wrapping
    if (do_restart)
    {
+      debug ("Time to do restart");
       savesettings ();
       pub (prefixstat, "restart", "Restarting");
       mqtt.disconnect ();
+      delay (100);
       ESP.restart ();
       return false;             // Uh
    }
    if (do_upgrade)
    {
+      debug ("Time to do upgrade");
       pub (prefixstat, "upgrade", "OTA upgrade %s", otahost);
       mqtt.disconnect ();
+      delay (100);
       upgrade ();
       return false;             // Uh
    }
-   // More aggressive SNTP
+   // Save settings
+   if (settingsupdate && (int) (settingsupdate - now) < 0)
+      savesettings ();
+   // WiFi reconnect
    static long sntpbackoff = 100;
    static long sntptry = 0;
+   static long wifiretry = 0;
+   static boolean wificonnected = 0;
+   if (wificonnected)
+   {                            // Connected
+      if (((*wifissid2 || *wifissid3) ? (WiFiMulti.run () != WL_CONNECTED) : (!WiFi.isConnected ())))
+      {
+         debug ("WiFi disconnected\n");
+         wificonnected = 0;
+      }
+   } else
+   {                            // Not connected
+      if (((*wifissid2 || *wifissid3) ? (WiFiMulti.run () == WL_CONNECTED) : (WiFi.isConnected ())))
+      {
+         debug ("WiFi connected\n");
+         wificonnected = 1;
+         sntpbackoff = 100;
+         sntptry = now;
+      }
+   }
+   if (!wificonnected)
+      return false;             // No point in doing much more here
+   // More aggressive SNTP
    if (time (NULL) < 86400 && (int) (sntptry - now) < 0)
    {
+      debug ("Poked SNTP\n");
       sntptry = now + sntpbackoff;
       if (sntpbackoff < 300000)
          sntpbackoff *= 2;
       sntp_stop ();
       sntp_init ();
-   }
-   // Save settings
-   if (settingsupdate && settingsupdate < now)
-      savesettings ();
-   // WiFi
-   if ((*wifissid2 || *wifissid3) ? (WiFiMulti.run () != WL_CONNECTED) : (!WiFi.isConnected ()))
-   {
-      sntpbackoff = 100;
-      sntptry = now;
-      return false;             // No wifi, not a lot more we can do
    }
    // MQTT reconnnect
    static long mqttretry = 0;
@@ -488,7 +505,6 @@ ESP8266RevK::loop ()
    if (*mqtthost && !mqtt.loop () && (int) (mqttretry - now) < 0)
    {
       static long mqttbackoff = 100;
-      debug ("MQTT check\n");
       char topic[101];
       snprintf (topic, sizeof (topic), "%s/%.*s/%s", prefixtele, appnamelen, appname, hostname);
       if (mqtt.connect (hostname, mqttuser, mqttpass, topic, MQTTQOS1, true, "Offline"))
@@ -496,20 +512,21 @@ ESP8266RevK::loop ()
          debug ("MQTT ok\n");
          // Worked
          mqttbackoff = 1000;
-         mqtt.publish (topic, appversion ? : "Online", true);   // LWT
+         pub (prefixtele, NULL, "Online %s", appversion);
          // Specific device
          snprintf (topic, sizeof (topic), "+/%.*s/%s/#", appnamelen, appname, hostname);
          mqtt.subscribe (topic);
          // All devices
          snprintf (topic, sizeof (topic), "+/%.*s/*/#", appnamelen, appname);
          mqtt.subscribe (topic);
-      }
-
-      else if (mqttbackoff < 300000)
+      } else if (mqttbackoff < 300000)
+      {                         // Not connected to MQTT
+         debug ("MQTT offline\n");
          mqttbackoff *= 2;
-      mqttretry = now + mqttbackoff;
+         mqttretry = now + mqttbackoff;
+         return false;
+      }
    }
-
    return true;                 // OK
 }
 
@@ -616,12 +633,6 @@ ESP8266RevK::restart ()
 }
 
 static void
-myclient (WiFiClient & client)
-{
-   client.setLocalPortStart (60000 + ESP8266TrueRandom.random (5000));
-}
-
-static void
 myclientTLS (WiFiClientSecure & client, byte * sha1)
 {
    client.setLocalPortStart (60000 + ESP8266TrueRandom.random (5000));
@@ -634,12 +645,6 @@ myclientTLS (WiFiClientSecure & client, byte * sha1)
    }
    static BearSSL::Session sess;
    client.setSession (&sess);
-}
-
-void
-ESP8266RevK::client (WiFiClient & client)
-{
-   return myclient (client);
 }
 
 void

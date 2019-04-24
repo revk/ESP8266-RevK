@@ -48,7 +48,6 @@ boolean app_setting(const char *setting,const byte *value,size_t len);	// Called
 class ESP8266RevK : private PubSubClient {
  public:
    ESP8266RevK(const char*myappname="RevK",const char *myappversion=NULL,const char *myotahost=NULL,boolean usetls=true);
-   void client(WiFiClient&);	// Unsecure TCP cliennt
    void  clientTLS(WiFiClientSecure&,byte *sha1=NULL);	// Secure TLS client (LE cert if no sha1)
    // Functions return true of "OK"
    boolean loop(void);	// Call in loop, returns false if wifi not connected
