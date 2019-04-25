@@ -18,7 +18,6 @@
 
 #include <ESP8266WiFiMulti.h>
 #include <ESP8266httpUpdate.h>
-#include <ESP8266TrueRandom.h>
 #include <EEPROM.h>
 #include "lecert.h"
 extern "C"
@@ -652,7 +651,6 @@ boolean ESP8266RevK::restart ()
 static void
 myclientTLS (WiFiClientSecure & client, byte * sha1)
 {
-   client.setLocalPortStart (60000 + ESP8266TrueRandom.random (5000));
    if (sha1)
       client.setFingerprint (sha1);
    else
