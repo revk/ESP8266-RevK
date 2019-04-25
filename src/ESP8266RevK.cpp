@@ -518,7 +518,7 @@ boolean ESP8266RevK::loop ()
          // Worked
          mqttretry = 0;
          mqttbackoff = 1000;
-         pub (prefixtele, NULL, "Online %s up %d.%03d %dk", appversion, now / 1000, now % 1000, ESP.getFlashChipRealSize ()/1024);
+         pub (prefixtele, NULL, "Online %s up %d.%03d flash %dKiB", appversion, now / 1000, now % 1000, ESP.getFlashChipRealSize ()/1024);
          // Specific device
          snprintf (topic, sizeof (topic), "+/%.*s/%s/#", appnamelen, appname, hostname);
          mqtt.subscribe (topic);
