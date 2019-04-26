@@ -5,7 +5,7 @@
 
 #include <ESP8266RevK.h>
 #ifdef REVKDEBUG
-#define debug(...) Serial.printf(__VA_ARGS__)
+#define debug(...) do{Serial.printf(__VA_ARGS__);Serial.flush();}while(0)
 #else
 #define debug(...) do{}while(0)
 #endif
@@ -128,7 +128,7 @@ savesettings ()
          EEPROM.write (addr++, s->value[i]);
    }
    EEPROM.write (addr++, 0);    // End of settings
-   EEPROM.write (0, appnamelen);        // Make settings valid
+   EEPROM.write (0, sizeof (eepromsig) - 1);    // Make settings valid
    debug ("Settings saved, used %d/%d bytes\n", addr, MAXEEPROM);
    EEPROM.end ();
    settingsupdate = 0;
@@ -155,10 +155,12 @@ loadsettings ()
       return false;             // Check app name
    }
    i = 0;
+   l = EEPROM.read (addr++);
    if (l == appnamelen)
       for (i = 0; i < appnamelen && EEPROM.read (addr++) == appname[i]; i++);
    if (!i || i != appnamelen)
    {
+      if(appnamelen) settingsupdate = (millis ()? : 1);        // Save settings
       debug ("EEPROM different app\n");
       EEPROM.end ();
       return false;             // Check app name
@@ -436,7 +438,6 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const
          myclient (mqttclient);
          mqtt.setClient (mqttclient);
       }
-      mqtt.setServer (mqtthost, *mqttport ? atoi (mqttport) : mqttsha1_set ? 8883 : 1883);
       mqtt.setCallback (message);
    }
    sntp_set_timezone (0);       // UTC please
@@ -493,6 +494,7 @@ ESP8266RevK::loop ()
          wificonnected = 1;
          sntpbackoff = 100;
          sntptry = now;
+         mqtt.setServer (mqtthost, *mqttport ? atoi (mqttport) : mqttsha1_set ? 8883 : 1883);
       }
    }
    // More aggressive SNTP
