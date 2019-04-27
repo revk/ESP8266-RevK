@@ -28,7 +28,9 @@
 
   void setup()
   { // Your set up here as usual
-
+	Serial.begin(115200);
+	Serial.printf_P(PSTR("Setting 1 is %s\n"),mysetting1);
+	Serial.printf_P(PSTR("Setting 2 is %s\n"),mysetting2);
   }
 
   void loop()
