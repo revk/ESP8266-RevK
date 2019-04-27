@@ -32,7 +32,7 @@
 // restart	Do a restart (saving settings first)
 //
 
-//#define REVKDEBUG               // If defined, does serial debug at 74880
+#define REVKDEBUG               // If defined, does serial debug at 74880
 
 #ifndef ESP8266RevK_H
 #define ESP8266RevK_H
@@ -42,22 +42,26 @@
 #include <PubSubClient.h>
 
 // Functions expected in the app (return true if OK)
-boolean app_cmnd(const char*suffix, const byte *message, size_t len); // Called for incoming commands not already handled
-boolean app_setting(const char *setting,const byte *value,size_t len);	// Called for settings from EEPROM (value is always null terminated at [len])
+boolean app_command(const char*tag, const byte *message, size_t len); // Called for incoming commands not already handled
+const char * app_setting(const char *tag,const byte *value,size_t len);	// Called for settings from EEPROM 
+// value is NULL, or malloc'd with NULL added and not freed until next app setting with same tag
+// Return is PROGMEM pointer to the setting name if setting is accepted, or NULL if not accepted
 
 class ESP8266RevK : private PubSubClient {
  public:
    ESP8266RevK(const char*myappname="RevK",const char *myappversion=NULL,const char *myotahost=NULL,boolean usetls=true);
-   void  clientTLS(WiFiClientSecure&,byte *sha1=NULL);	// Secure TLS client (LE cert if no sha1)
+   void  clientTLS(WiFiClientSecure&,const byte *sha1=NULL);	// Secure TLS client (LE cert if no sha1)
    // Functions return true of "OK"
    boolean loop(void);	// Call in loop, returns false if wifi not connected
-   boolean stat(const char *suffix, const char *fmt=NULL, ...); // Publish stat
-   boolean tele(const char *suffix, const char *fmt=NULL, ...); // Publish tele
-   boolean error(const char *suffix, const char *fmt=NULL, ...); // Publish error
-   boolean pub(const char *prefix, const char *suffix, const char *fmt=NULL, ...);	// Publish general
-   boolean pub(const char *prefix, const char *suffix, int qos, boolean retain, const char *fmt=NULL, ...);	// Publish general (with qos)
-   boolean setting(const char *name,const char*value=NULL); // Apply a setting (gets written to EEPROM)
-   boolean setting(const char *name,const byte*value=NULL,size_t len=0); // Apply a setting (gets written to EEPROM)
+   boolean state(const __FlashStringHelper *tag, const __FlashStringHelper *fmt=NULL, ...); // Publish stat
+   boolean event(const __FlashStringHelper *tag, const __FlashStringHelper *fmt=NULL, ...); // Publish tele
+   boolean error(const __FlashStringHelper *tag, const __FlashStringHelper *fmt=NULL, ...); // Publish error
+   boolean info(const __FlashStringHelper *tag, const __FlashStringHelper *fmt=NULL, ...); // Publish error
+   boolean pub (const char * prefix, const char * suffix, const __FlashStringHelper * fmt, ...); // Publish general
+   boolean pub(const __FlashStringHelper *prefix, const __FlashStringHelper *tag, const __FlashStringHelper *fmt=NULL, ...);	// Publish general
+   boolean pub(const __FlashStringHelper *prefix, const __FlashStringHelper *tag, int qos, boolean retain, const __FlashStringHelper *fmt=NULL, ...);	// Publish general (with qos)
+   boolean setting(const __FlashStringHelper *name,const char*value=NULL); // Apply a setting (gets written to EEPROM)
+   boolean setting(const __FlashStringHelper *name,const byte*value=NULL,size_t len=0); // Apply a setting (gets written to EEPROM)
    boolean ota();	// Do upgrade
    boolean restart();	// Save settings and restart
  private:

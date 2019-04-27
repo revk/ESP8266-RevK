@@ -1,12 +1,11 @@
 // See include file for more details
-//
-// TODO: -
-// Fallback MQTT
 
 #include <ESP8266RevK.h>
 #ifdef REVKDEBUG
-#define debug(...) do{Serial.printf(__VA_ARGS__);Serial.flush();}while(0)
+#define debugf(fmt,...) do{Serial.printf_P(PSTR(fmt "\n"),__VA_ARGS__);Serial.flush();}while(0)
+#define debug(str) do{Serial.printf(PSTR("%S\n"),PSTR(str));Serial.flush();}while(0)
 #else
+#define debugf(...) do{}while(0)
 #define debug(...) do{}while(0)
 #endif
 
@@ -27,46 +26,53 @@ extern "C"
 
               // Local functions
 static void myclient (WiFiClient & client);
-static void myclientTLS (WiFiClientSecure &, byte * sha1 = NULL);
-static boolean pub (const char *prefix, const char *suffix, const char *fmt, ...);
-static boolean pub (const char *prefix, const char *suffix, int qos, boolean retain, const char *fmt, ...);
+static void myclientTLS (WiFiClientSecure &, const byte * sha1 = NULL);
+static boolean pub (const char *prefix, const char *suffix, const __FlashStringHelper * fmt, ...);
+static boolean pub (const __FlashStringHelper * prefix, const __FlashStringHelper * suffix, const __FlashStringHelper * fmt, ...);
+static boolean pub (const __FlashStringHelper * prefix, const __FlashStringHelper * suffix, int qos, boolean retain,
+                    const __FlashStringHelper * fmt, ...);
 boolean savesettings ();
 boolean applysetting (const char *name, const byte * value, size_t len);
 
 // App name set by constructor, expceted to be static string
-static const char *appname = "RevK";    // System set from constructor as literal string
+static const char *appname = NULL;      // System set from constructor as literal string
 static const char *appversion = NULL;   // System set from constructor as literal string
 static int appnamelen = 4;      // May be truncated
 static boolean do_restart = false;      // Do a restart in main loop cleanly
 static boolean do_upgrade = false;      // Do an OTA upgrade
 static boolean otausetls = true;        // Use TLS for OTA (only set in constructor)
 
-   // Settings used here
-#define	OTAHOST			"excalibur.bec.aa.net.uk"       // Default OTA host
-#define	settings		\
-s(hostname,32,"")		\
-s(otahost,128,"")		\
-f(otasha1,20)			\
-s(wifissid,32,"IoT")		\
-s(wifipass,32,"security")	\
-s(wifissid2,32,"")		\
-s(wifipass2,32,"")		\
-s(wifissid3,32,"")		\
-s(wifipass3,32,"")		\
-s(mqtthost,128,"mqtt.iot")	\
-f(mqttsha1,20)			\
-s(mqttuser,32,"")		\
-s(mqttpass,32,"")		\
-s(mqttport,10,"")		\
-s(ntphost,127,"")		\
-s(prefixcmnd,10,"cmnd")		\
-s(prefixstat,10,"stat")		\
-s(prefixtele,10,"tele")		\
-s(prefixerror,10,"error")	\
-s(prefixsetting,10,"setting")	\
+// Some defaults
+#define	OTAHOST			"excalibur.bec.aa.net.uk"
+#define	WIFISSID		"IoT"
+#define	WIFIPASS		"security"
+#define MQTTHOST		"mqtt.iot"
 
-#define s(name,len,def) static char name[len+1]=def;
-#define f(name,len) static byte name[len]={};boolean name##_set=false;
+#define	settings	\
+s(hostname);		\
+s(otahost);		\
+f(otasha1,20);		\
+s(wifissid);		\
+s(wifipass);		\
+s(wifissid2);		\
+s(wifipass2);		\
+s(wifissid3);		\
+s(wifipass3);		\
+s(mqtthost);		\
+f(mqttsha1,20);		\
+s(mqttuser);		\
+s(mqttpass);		\
+s(mqttport);		\
+s(ntphost);		\
+s(prefixcommand);	\
+s(prefixsetting);	\
+s(prefixstate);		\
+s(prefixevent);		\
+s(prefixinfo);		\
+s(prefixerror);		\
+
+#define s(name) static const char *name=NULL
+#define f(name,len) static const byte *name=NULL
 settings
 #undef 	f
 #undef 	s
@@ -74,20 +80,31 @@ typedef struct setting_s setting_t;
 struct setting_s
 {
    setting_t *next;
-   char *name;
-   byte *value;
-   size_t len;
+   const char *tag;             // PROGMEM
+   byte len;
+   const byte value[0];
 };
+#define	MAXEEPROM 1024          // EEPROM storage
+const char eepromsig[] = "RevK";
 static setting_t *set = NULL;   // The settings
+static unsigned int setlen = sizeof (eepromsig) + 1;
 static long settingsupdate = 0; // When to do a settings update (delay after settings changed, 0 if no change)
+
       // Local variables
 static WiFiClientSecure mqttclientsecure;
 static WiFiClient mqttclient;
 static ESP8266WiFiMulti WiFiMulti;
 static PubSubClient mqtt;
 
-#define	MAXEEPROM 1024          // EEPROM storage
-const char *eepromsig = "RevK";
+static const char *
+strdup_P (const char *p)
+{
+   const char *m = (const char *) malloc (strlen_P (p) + 1);
+   strcpy_P ((char *) m, p);
+   return m;
+}
+
+#define PCPY(x) strdup_P(PSTR(x))
 
 boolean
 savesettings ()
@@ -109,27 +126,24 @@ savesettings ()
    setting_t *s;
    for (s = set; s; s = s->next)
    {
-      l = strlen (s->name);
-      if (!l || l > 255 || s->len > 255)
+      l = strlen_P (s->tag);
+      char temp[50];
+      if (!l || l > sizeof (temp) - 1 || s->len > 255)
       {
-         debug ("Cannot save %s as bad length (%d)\n", s->name, s->len);
+         debugf ("Cannot save %S as bad length (%d)", s->tag, s->len);
          continue;              // Cannot save
       }
-      if (!s->value)
-      {
-         debug ("Cannot save %s (null)\n", s->name);
-         continue;
-      }
+      strcpy_P (temp, s->tag);
       EEPROM.write (addr++, l);
       for (i = 0; i < l; i++)
-         EEPROM.write (addr++, s->name[i]);
+         EEPROM.write (addr++, temp[i]);
       EEPROM.write (addr++, s->len);
       for (i = 0; i < s->len; i++)
-         EEPROM.write (addr++, s->value[i]);
+         EEPROM.write (addr++, ((char *) s->value)[i]);
    }
    EEPROM.write (addr++, 0);    // End of settings
    EEPROM.write (0, sizeof (eepromsig) - 1);    // Make settings valid
-   debug ("Settings saved, used %d/%d bytes\n", addr, MAXEEPROM);
+   debugf ("Settings saved, used %d/%d bytes", addr, MAXEEPROM);
    EEPROM.end ();
    settingsupdate = 0;
    return true;                 // Done
@@ -138,7 +152,7 @@ savesettings ()
 boolean
 loadsettings ()
 {
-   debug ("Load settings\n");
+   debug ("Load settings");
    unsigned int addr = 0,
       i,
       l;
@@ -150,7 +164,7 @@ loadsettings ()
    if (!i || i != sizeof (eepromsig) - 1)
    {
       settingsupdate = (millis ()? : 1);        // Save settings
-      debug ("EEPROM not set\n");
+      debug ("EEPROM not set");
       EEPROM.end ();
       return false;             // Check app name
    }
@@ -160,8 +174,9 @@ loadsettings ()
       for (i = 0; i < appnamelen && EEPROM.read (addr++) == appname[i]; i++);
    if (!i || i != appnamelen)
    {
-      if(appnamelen) settingsupdate = (millis ()? : 1);        // Save settings
-      debug ("EEPROM different app\n");
+      if (appnamelen)
+         settingsupdate = (millis ()? : 1);     // Save settings
+      debug ("EEPROM different app");
       EEPROM.end ();
       return false;             // Check app name
    }
@@ -175,7 +190,7 @@ loadsettings ()
          break;
       if (l >= sizeof (name))
       {                         // Bad name, skip
-         debug ("Bad name len to read (%d)\n", l);
+         debugf ("Bad name len to read (%d)", l);
          addr += l;
          //Skip name
          l = EEPROM.read (addr++);
@@ -197,14 +212,14 @@ loadsettings ()
    if (!bad)
       settingsupdate = 0;       // No need to save
    do_restart = 0;              // Not changed key settings
-   debug ("Loaded settings\n");
+   debug ("Loaded settings");
    return true;
 }
 
 boolean
 upgrade ()
 {                               // Do OTA upgrade
-   debug ("Upgrade\n");
+   debug ("Upgrade");
    // TODO check flash size, etc and load Minimal instead if too big
    savesettings ();
    char url[200];
@@ -213,7 +228,7 @@ upgrade ()
          e = sizeof (url) - 1;
       url[p++] = '/';
       if (appnamelen && p < e)
-         p += snprintf (url + p, e - p, "%.*s", appnamelen, appname);
+         p += snprintf_P (url + p, e - p, PSTR ("%.*s"), appnamelen, appname);
       else
       {
          //Check flash for saved app name
@@ -233,100 +248,121 @@ upgrade ()
          EEPROM.end ();
       }
       if (p < e)
-         p += snprintf (url + p, e - p, "%s", ".ino." BOARD ".bin");
+         p += snprintf_P (url + p, e - p, PSTR ("%S"), PSTR (".ino." BOARD ".bin"));
       url[p] = 0;
    }
-   char *host = otahost;
-   if (!*host)
-      host = OTAHOST;           // Default
    ESPhttpUpdate.rebootOnUpdate (false);        // We 'll do the reboot
-   if (otasha1_set)
+   if (otasha1)
    {
-      debug ("Upgrade secure %s\n", host);
+      debugf ("Upgrade secure %s", otahost);
       delay (100);
       WiFiClientSecure client;
       myclientTLS (client, otasha1);
-      if (ESPhttpUpdate.update (client, String (host), 443, String (url)))
+      if (ESPhttpUpdate.update (client, String (otahost), 443, String (url)))
          Serial.println (ESPhttpUpdate.getLastErrorString ());
    } else if (otausetls)
    {
-      debug ("Upgrade secure (LE) %s\n", host);
+      debugf ("Upgrade secure (LE) %s", otahost);
       delay (100);
       WiFiClientSecure client;
       myclientTLS (client);
-      ESPhttpUpdate.update (client, String (host), 443, String (url));
+      ESPhttpUpdate.update (client, String (otahost), 443, String (url));
    } else
    {
-      debug ("Upgrade insecure %s\n", host);
+      debugf ("Upgrade insecure %s", otahost);
       delay (100);
       WiFiClient client;
       myclient (client);
-      ESPhttpUpdate.update (client, String (host), 80, String (url));
+      ESPhttpUpdate.update (client, String (otahost), 80, String (url));
    }
-   debug ("Upgrade done:%s\n", ESPhttpUpdate.getLastErrorString ().c_str ());
+   debugf ("Upgrade done:%s", ESPhttpUpdate.getLastErrorString ().c_str ());
    delay (100);
    ESP.restart ();              // Boot
    return false;                // Should not get here
 }
 
-boolean
+const char *
 localsetting (const char *name, const byte * value, size_t len)
-{                               // Apply a local setting
-#define s(n,l,d) if(!strcasecmp(name,#n)){if(len>l || (!value&&len))return false;memcpy(n,value,len);n[len]=0;return true;}
-#define f(n,l) if(!strcasecmp(name,#n)){if(len==0){n##_set=false;return true;}else if(len==l){memcpy(n,value,len);n##_set=true;return true;}}
+{                               // Apply a local setting (return PROGMEM tag)
+#define s(n) do{const char*t=PSTR(#n);if(!strcmp_P(name,t)){n=(const char*)value;return t;}}while(0)
+#define f(n,l) do{const char*t=PSTR(#n);if(!strcmp_P(name,t)){if(len&&len!=l)return NULL;n=value;return t;}}while(0)
    settings
 #undef f
 #undef s
-      return false;
+      return NULL;
 }
 
 boolean
-applysetting (const char *name, const byte * value, size_t len)
+applysetting (const char *tag, const byte * value, size_t len)
 {                               // Apply a setting
-   debug ("Apply %s %.*s (%d)\n", name, len, value, len);
    if (len > 255)
    {
-      debug ("Setting %s too long (%d)\n", name, len);
+      debugf ("Setting %s too long (%d)", tag, len);
       return false;             // Too big
    }
-   if (!localsetting (name, value, len) && !app_setting (name, value, len))
+   // New setting
+   setting_t *news = NULL;      // New setting
+   const byte *val = NULL;      // Value in new setting
+   if (len)
+   {                            // Has a value
+      if (tag[0] == '0' && tag[1] == 'x')
+      {                         // Convert from Hex
+         // TODO
+      } else
+      {                         // Create new setting with new value
+         news = (setting_t *) malloc (sizeof (*news) + len + 1);
+         val = news->value;
+         memcpy ((void *) val, (void *) value, len);
+         ((char *) val)[len] = 0;
+         news->len = len;
+      }
+   }
+   debugf ("Apply %s %.*s (%d)", tag, len, val, len);
+   const char *newtag = NULL;
+   // Existing setting
+   setting_t **ss = &set;
+   while (*ss && strcmp_P (tag, (*ss)->tag))
+      ss = &(*ss)->next;
+   unsigned int newlen = setlen;
+   if (*ss)
+      newlen -= strlen (tag) + 1 + (*ss)->len + 1;
+   if (news)
+      newlen += strlen (tag) + 1 + len + 1;
+   if (newlen > MAXEEPROM)
+   {
+      debugf ("Settings would take too much space %d/%d", newlen, MAXEEPROM);
+      if (news)
+         free (news);
       return false;             // Not a setting we know
-   setting_t *s;
-   for (s = set; s && strcasecmp (name, s->name); s = s->next);
-   if (!s && (!value || !len))
-      return true;              // Setting cleared but did not exist
-   if (!s)
-   {                            // Create new setting
-      s = (setting_t *) malloc (sizeof (*s));
-      s->name = strdup (name);
-      s->value = (byte *) malloc (len);
-      s->len = len;
-      memcpy (s->value, value, len);
-      s->next = set;
-      set = s;
-      settingsupdate = ((millis () + 1000) ? : 1);
-   } else if (!len)
-   {                            // Remove setting
-      setting_t **ss = &set;
-      while (*ss != s)
-         ss = &(*ss)->next;
+   }
+   if (!(newtag = localsetting (tag, val, len)) && !(newtag = app_setting (tag, val, len)))
+   {                            // Setting not accepted
+      if (news)
+         free (news);
+      return false;             // Not a setting we know
+   }
+   setlen = newlen;
+   if (!*ss && !news)
+      return true;              // No new value and no existing value
+   if (*ss && news && (*ss)->len == len && !memcmp ((*ss)->value, val, len))
+   {
+      free (news);
+      return true;              // No new value and no existing value
+   }
+   if (*ss)
+   {                            // Delete setting
+      setting_t *s = *ss;
       *ss = s->next;
-      free (s->name);
-      if (s->value)
-         free (s->value);
       free (s);
-      settingsupdate = ((millis () + 1000) ? : 1);
-   } else if (s->len != len || memcpy (s->value, value, len))
-   {                            // Change value
-      if (s->value)
-         free (s->value);
-      s->value = (byte *) malloc (len);
-      s->len = len;
-      memcpy (s->value, value, len);
-      settingsupdate = ((millis () + 1000) ? : 1);
-   } else
-      return false;             // ?
-   if (settingsupdate && !strcasecmp (name, "hostname"))
+   }
+   if (news)
+   {                            // Add new setting
+      news->tag = newtag;
+      news->next = set;
+      set = news;
+   }
+   settingsupdate = ((millis () + 1000) ? : 1);
+   if (settingsupdate && !strcasecmp_P (tag, PSTR ("hostname")))
       do_restart = true;
    return true;                 // Found(not changed)
 }
@@ -334,7 +370,7 @@ applysetting (const char *name, const byte * value, size_t len)
 static void
 message (const char *topic, byte * payload, unsigned int len)
 {                               // Handle MQTT message
-   debug ("MQTT msg %s %.*s (%d)\n", topic, len, payload, len);
+   debugf ("MQTT msg %s %.*s (%d)", topic, len, payload, len);
    char *p = strchr (topic, '/');
    if (!p)
       return;
@@ -345,8 +381,8 @@ message (const char *topic, byte * payload, unsigned int len)
    else
       p = NULL;
    int l;
-   l = strlen (prefixcmnd);
-   if (p && !strncasecmp (topic, prefixcmnd, l) && topic[l] == '/')
+   l = strlen (prefixcommand);
+   if (p && !strncasecmp (topic, prefixcommand, l) && topic[l] == '/')
    {
       if (!strcasecmp (p, "upgrade"))
       {                         // OTA upgrade
@@ -358,17 +394,15 @@ message (const char *topic, byte * payload, unsigned int len)
          do_restart = true;
          return;
       }
-      if (!app_cmnd (p, payload, len))
-         pub (prefixerror, p, "Bad command");
+      if (!app_command (p, payload, len))
+         pub (prefixerror, p, F ("Bad command"));
       return;
    }
    l = strlen (prefixsetting);
    if (p && !strncasecmp (topic, prefixsetting, l) && topic[l] == '/')
    {
-      if (applysetting (p, payload, len))
-         pub (prefixstat, p, "Setting saved");
-      else
-         pub (prefixerror, p, "Bad setting");
+      if (!applysetting (p, payload, len))
+         pub (prefixerror, p, F ("Bad setting"));
       return;
    }
 }
@@ -391,59 +425,75 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const
       appnamelen = l - i;
    }
    appversion = myappversion;
-   debug ("Application start %.*s %s\n", appnamelen, appname, appversion);
+   setlen += appnamelen + 1;
+   debugf ("Application start %.*s %s", appnamelen, appname, appversion);
    loadsettings ();
    otausetls = usetls;
-   if (!*otahost && myotahost)
-      strncpy (otahost, myotahost, sizeof (otahost));
-   if (!*hostname)
-      snprintf (hostname, sizeof (hostname), "%06X", ESP.getChipId ());
-   if (!*wifissid)
-      strncpy (wifissid, "IoT", sizeof (wifissid));
-   if (!*wifipass)
-      strncpy (wifipass, "security", sizeof (wifipass));
-   if (!*mqtthost)
-      strncpy (mqtthost, "mqtt.iot", sizeof (mqtthost));
+   if (!otahost && myotahost)
+      otahost = myotahost;
+   if (!hostname)
+   {
+      hostname = (const char *) malloc (7);
+      snprintf_P ((char *) hostname, 7, PSTR ("%06X"), ESP.getChipId ());
+   }
+   if (!otahost)
+      otahost = PCPY (OTAHOST);
+   if (!wifissid)
+      wifissid = PCPY (WIFISSID);
+   if (!wifipass)
+      wifipass = PCPY (WIFIPASS);
+   if (!mqtthost)
+      mqtthost = PCPY (MQTTHOST);
+   if (!prefixcommand)
+      prefixcommand = PCPY ("command");
+   if (!prefixsetting)
+      prefixsetting = PCPY ("setting");
+   if (!prefixstate)
+      prefixstate = PCPY ("state");
+   if (!prefixerror)
+      prefixerror = PCPY ("error");
+   if (!prefixinfo)
+      prefixinfo = PCPY ("info");
+   if (!prefixevent)
+      prefixevent = PCPY ("event");
    char host[100];
-   snprintf (host, sizeof (host), "%.*s-%s", appnamelen, appname, hostname);
-   debug ("WiFi %s\n", host);
+   snprintf_P (host, sizeof (host), PSTR ("%.*s-%s"), appnamelen, appname, hostname);
+   debugf ("WiFi %s", host);
    WiFi.mode (WIFI_STA);
    wifi_station_set_hostname (host);
    WiFi.setAutoConnect (true);
    WiFi.setAutoReconnect (true);
-   if (*wifissid2 || *wifissid3)
+   if (wifissid2 || wifissid3)
    {
       WiFiMulti.addAP (wifissid, wifipass);
-      if (*wifissid2)
+      if (wifissid2)
          WiFiMulti.addAP (wifissid2, wifipass2);
-      if (*wifissid3)
+      if (wifissid3)
          WiFiMulti.addAP (wifissid3, wifipass3);
       WiFiMulti.run ();
       // See if we can connect
    } else
-   {
-      //wifi_set_sleep_type(NONE_SLEEP_T); // TODO some control on this...
       WiFi.begin (wifissid, wifipass);
-   }
-   if (*mqtthost)
+   if (mqtthost)
    {
-      if (mqttsha1_set)
+      if (mqttsha1)
       {
-         debug ("MQTT secure %s\n", mqtthost);
+         debugf ("MQTT secure %s", mqtthost);
          myclientTLS (mqttclientsecure, mqttsha1);
          mqtt.setClient (mqttclientsecure);
       } else
       {
-         debug ("MQTT insecure %s\n", mqtthost);
+         debugf ("MQTT insecure %s", mqtthost);
          myclient (mqttclient);
          mqtt.setClient (mqttclient);
       }
       mqtt.setCallback (message);
+      mqtt.setServer (mqtthost, mqttport ? atoi (mqttport) : mqttsha1 ? 8883 : 1883);
    }
    sntp_set_timezone (0);       // UTC please
-   if (*ntphost)
-      sntp_setservername (0, ntphost);
-   debug ("RevK init done\n");
+   if (ntphost)
+      sntp_setservername (0, (char *) ntphost);
+   debug ("RevK init done");
 }
 
 boolean
@@ -454,8 +504,8 @@ ESP8266RevK::loop ()
    {
       debug ("Time to do restart");
       savesettings ();
-      pub (prefixstat, "restart", "Restarting");
-      pub (prefixtele, NULL, 0, true, "Offline");
+      pub (prefixinfo, NULL, F ("Restarting"));
+      pub (prefixstate, NULL, F ("0"));
       mqtt.disconnect ();
       delay (100);
       ESP.restart ();
@@ -464,8 +514,8 @@ ESP8266RevK::loop ()
    if (do_upgrade)
    {
       debug ("Time to do upgrade");
-      pub (prefixstat, "upgrade", "OTA upgrade %s", otahost);
-      pub (prefixtele, NULL, 0, true, "Offline");
+      pub (prefixinfo, "upgrade", F ("OTA upgrade %s"), otahost);
+      pub (prefixstate, NULL, 0, true, F ("0"));
       mqtt.disconnect ();
       delay (100);
       upgrade ();
@@ -481,26 +531,26 @@ ESP8266RevK::loop ()
    static boolean wificonnected = 0;
    if (wificonnected)
    {                            // Connected
-      if (((*wifissid2 || *wifissid3) ? (WiFiMulti.run () != WL_CONNECTED) : (WiFi.status () != WL_CONNECTED)))
+      if (((wifissid2 || wifissid3) ? (WiFiMulti.run () != WL_CONNECTED) : (WiFi.status () != WL_CONNECTED)))
       {
-         debug ("WiFi disconnected\n");
+         debug ("WiFi disconnected");
          wificonnected = 0;
+         mqtt.disconnect ();
       }
    } else
    {                            // Not connected
-      if (((*wifissid2 || *wifissid3) ? (WiFiMulti.run () == WL_CONNECTED) : (WiFi.status () == WL_CONNECTED)))
+      if (((wifissid2 || wifissid3) ? (WiFiMulti.run () == WL_CONNECTED) : (WiFi.status () == WL_CONNECTED)))
       {
-         debug ("WiFi connected\n");
+         debug ("WiFi connected");
          wificonnected = 1;
          sntpbackoff = 100;
          sntptry = now;
-         mqtt.setServer (mqtthost, *mqttport ? atoi (mqttport) : mqttsha1_set ? 8883 : 1883);
       }
    }
    // More aggressive SNTP
    if (wificonnected && time (NULL) < 86400 && (int) (sntptry - now) < 0)
    {
-      debug ("Poked SNTP\n");
+      debug ("Poked SNTP");
       sntptry = now + sntpbackoff;
       if (sntpbackoff < 300000)
          sntpbackoff *= 2;
@@ -511,28 +561,33 @@ ESP8266RevK::loop ()
    static long mqttbackoff = 100;
    static long mqttretry = mqttbackoff;
    // Note, signed to allow for wrapping millis
-   if (*mqtthost && !mqtt.loop () && (!mqttretry || (int) (mqttretry - now) < 0))
+   if (mqtthost && !mqtt.loop () && (!mqttretry || (int) (mqttretry - now) < 0) && wificonnected)
    {
       char topic[101];
-      snprintf (topic, sizeof (topic), "%s/%.*s/%s", prefixtele, appnamelen, appname, hostname);
-      if (mqtt.connect (hostname, mqttuser, mqttpass, topic, MQTTQOS1, true, "Offline"))
+      snprintf_P (topic, sizeof (topic), PSTR ("%s/%.*s/%s"), prefixstate, appnamelen, appname, hostname);
+      if (mqtt.connect (hostname, mqttuser, mqttpass, topic, MQTTQOS1, true, "0"))
       {
-         debug ("MQTT OK\n");
+         debug ("MQTT OK");
          // Worked
          mqttretry = 0;
          mqttbackoff = 1000;
-         pub (prefixtele, NULL, "Online ver %s, up %d.%03d, flash %dKiB", appversion, now / 1000, now % 1000,
+         pub (prefixstate, NULL, F ("1"));
+         pub (prefixinfo, NULL, F ("Online ver %s, up %d.%03d, flash %dKiB"), appversion, now / 1000, now % 1000,
               ESP.getFlashChipRealSize () / 1024);
          // Specific device
-         snprintf (topic, sizeof (topic), "+/%.*s/%s/#", appnamelen, appname, hostname);
+         snprintf_P (topic, sizeof (topic), PSTR ("%s/%.*s/%s/#"), prefixcommand, appnamelen, appname, hostname);
+         mqtt.subscribe (topic);
+         snprintf_P (topic, sizeof (topic), PSTR ("%s/%.*s/%s/#"), prefixsetting, appnamelen, appname, hostname);
          mqtt.subscribe (topic);
          // All devices
-         snprintf (topic, sizeof (topic), "+/%.*s/*/#", appnamelen, appname);
+         snprintf_P (topic, sizeof (topic), PSTR ("%s/%.*s/*/#"), prefixcommand, appnamelen, appname);
+         mqtt.subscribe (topic);
+         snprintf_P (topic, sizeof (topic), PSTR ("%s/%.*s/*/#"), prefixsetting, appnamelen, appname);
          mqtt.subscribe (topic);
       } else
       {
          if (!mqttretry)
-            debug ("MQTT offline\n");
+            debug ("MQTT offline");
          if (mqttbackoff < 300000)
          {                      // Not connected to MQTT
             mqttbackoff *= 2;
@@ -545,24 +600,59 @@ ESP8266RevK::loop ()
 }
 
 static boolean
-pubap (const char *prefix, const char *suffix, int qos, boolean retain, const char *fmt, va_list ap)
+pubap (const __FlashStringHelper * prefix, const __FlashStringHelper * suffix, int qos, boolean retain,
+       const __FlashStringHelper * fmt, va_list ap)
 {
    if (!*mqtthost)
       return false;             // No MQTT
    char temp[128] = {
    };
    if (fmt)
-      vsnprintf (temp, sizeof (temp), fmt, ap);
+      vsnprintf_P (temp, sizeof (temp), (PGM_P) fmt, ap);
    char topic[101];
    if (suffix)
-      snprintf (topic, sizeof (topic), "%s/%.*s/%s/%s", prefix, appnamelen, appname, hostname, suffix);
+      snprintf_P (topic, sizeof (topic), PSTR ("%S/%.*s/%s/%s"), (PGM_P) prefix, appnamelen, appname, hostname, suffix);
    else
-      snprintf (topic, sizeof (topic), "%s/%.*s/%s", prefix, appnamelen, appname, hostname);
+      snprintf_P (topic, sizeof (topic), PSTR ("%S/%.*s/%s"), (PGM_P) prefix, appnamelen, appname, hostname);
    return mqtt.publish (topic, temp);
 }
 
 static boolean
-pub (const char *prefix, const char *suffix, const char *fmt, ...)
+pubap (const char *prefix, const __FlashStringHelper * suffix, int qos, boolean retain, const __FlashStringHelper * fmt, va_list ap)
+{
+   if (!*mqtthost)
+      return false;             // No MQTT
+   char temp[128] = {
+   };
+   if (fmt)
+      vsnprintf_P (temp, sizeof (temp), (PGM_P) fmt, ap);
+   char topic[101];
+   if (suffix)
+      snprintf_P (topic, sizeof (topic), PSTR ("%s/%.*s/%s/%s"), prefix, appnamelen, appname, hostname, suffix);
+   else
+      snprintf_P (topic, sizeof (topic), PSTR ("%s/%.*s/%s"), prefix, appnamelen, appname, hostname);
+   return mqtt.publish (topic, temp);
+}
+
+static boolean
+pubap (const char *prefix, const char *suffix, int qos, boolean retain, const __FlashStringHelper * fmt, va_list ap)
+{
+   if (!*mqtthost)
+      return false;             // No MQTT
+   char temp[128] = {
+   };
+   if (fmt)
+      vsnprintf_P (temp, sizeof (temp), (PGM_P) fmt, ap);
+   char topic[101];
+   if (suffix)
+      snprintf_P (topic, sizeof (topic), PSTR ("%s/%.*s/%s/%s"), prefix, appnamelen, appname, hostname, suffix);
+   else
+      snprintf_P (topic, sizeof (topic), PSTR ("%s/%.*s/%s"), prefix, appnamelen, appname, hostname);
+   return mqtt.publish (topic, temp);
+}
+
+static boolean
+pub (const char *prefix, const char *suffix, const __FlashStringHelper * fmt, ...)
 {
    va_list ap;
    va_start (ap, fmt);
@@ -572,7 +662,18 @@ pub (const char *prefix, const char *suffix, const char *fmt, ...)
 }
 
 static boolean
-pub (const char *prefix, const char *suffix, int qos, boolean retain, const char *fmt, ...)
+pub (const __FlashStringHelper * prefix, const __FlashStringHelper * suffix, const __FlashStringHelper * fmt, ...)
+{
+   va_list ap;
+   va_start (ap, fmt);
+   boolean ret = pubap (prefix, suffix, 1, false, fmt, ap);
+   va_end (ap);
+   return ret;
+}
+
+static boolean
+pub (const __FlashStringHelper * prefix, const __FlashStringHelper * suffix, int qos, boolean retain,
+     const __FlashStringHelper * fmt, ...)
 {
    va_list ap;
    va_start (ap, fmt);
@@ -581,28 +682,39 @@ pub (const char *prefix, const char *suffix, int qos, boolean retain, const char
    return ret;
 }
 
+
 boolean
-ESP8266RevK::stat (const char *suffix, const char *fmt, ...)
+ESP8266RevK::state (const __FlashStringHelper * suffix, const __FlashStringHelper * fmt, ...)
 {
    va_list ap;
    va_start (ap, fmt);
-   boolean ret = pubap (prefixstat, suffix, 1, false, fmt, ap);
+   boolean ret = pubap (prefixstate, suffix, 1, false, fmt, ap);
    va_end (ap);
    return ret;
 }
 
 boolean
-ESP8266RevK::tele (const char *suffix, const char *fmt, ...)
+ESP8266RevK::event (const __FlashStringHelper * suffix, const __FlashStringHelper * fmt, ...)
 {
    va_list ap;
    va_start (ap, fmt);
-   boolean ret = pubap (prefixtele, suffix, 1, false, fmt, ap);
+   boolean ret = pubap (prefixevent, suffix, 1, false, fmt, ap);
    va_end (ap);
    return ret;
 }
 
 boolean
-ESP8266RevK::error (const char *suffix, const char *fmt, ...)
+ESP8266RevK::info (const __FlashStringHelper * suffix, const __FlashStringHelper * fmt, ...)
+{
+   va_list ap;
+   va_start (ap, fmt);
+   boolean ret = pubap (prefixinfo, suffix, 1, false, fmt, ap);
+   va_end (ap);
+   return ret;
+}
+
+boolean
+ESP8266RevK::error (const __FlashStringHelper * suffix, const __FlashStringHelper * fmt, ...)
 {
    va_list ap;
    va_start (ap, fmt);
@@ -611,8 +723,19 @@ ESP8266RevK::error (const char *suffix, const char *fmt, ...)
    return ret;
 }
 
+boolean ESP8266RevK::pub (const char *prefix, const char *suffix, const __FlashStringHelper * fmt, ...)
+{
+   va_list
+      ap;
+   va_start (ap, fmt);
+   boolean
+      ret = pubap (prefix, suffix, 1, false, fmt, ap);
+   va_end (ap);
+   return ret;
+}
+
 boolean
-ESP8266RevK::pub (const char *prefix, const char *suffix, const char *fmt, ...)
+   ESP8266RevK::pub (const __FlashStringHelper * prefix, const __FlashStringHelper * suffix, const __FlashStringHelper * fmt, ...)
 {
    va_list ap;
    va_start (ap, fmt);
@@ -622,7 +745,8 @@ ESP8266RevK::pub (const char *prefix, const char *suffix, const char *fmt, ...)
 }
 
 boolean
-ESP8266RevK::pub (const char *prefix, const char *suffix, int qos, boolean retain, const char *fmt, ...)
+   ESP8266RevK::pub (const __FlashStringHelper * prefix, const __FlashStringHelper * suffix, int qos, boolean retain,
+                     const __FlashStringHelper * fmt, ...)
 {
    va_list ap;
    va_start (ap, fmt);
@@ -632,16 +756,20 @@ ESP8266RevK::pub (const char *prefix, const char *suffix, int qos, boolean retai
 }
 
 boolean
-ESP8266RevK::setting (const char *name, const char *value)
+ESP8266RevK::setting (const __FlashStringHelper * name, const char *value)
 {
-   return applysetting (name, (const byte *) value, strlen (value));
+   char temp[50];
+   strncpy_P (temp, (PGM_P) name, sizeof (temp));
+   return applysetting (temp, (const byte *) value, strlen (value));
 }
 
 boolean
-ESP8266RevK::setting (const char *name, const byte * value, size_t len)
+ESP8266RevK::setting (const __FlashStringHelper * name, const byte * value, size_t len)
 {
    // Set a setting
-   return applysetting (name, value, len);
+   char temp[50];
+   strncpy_P (temp, (PGM_P) name, sizeof (temp));
+   return applysetting (temp, value, len);
 }
 
 boolean
@@ -662,7 +790,7 @@ myclient (WiFiClient & client)
 }
 
 static void
-myclientTLS (WiFiClientSecure & client, byte * sha1)
+myclientTLS (WiFiClientSecure & client, const byte * sha1)
 {
    if (sha1)
       client.setFingerprint (sha1);
@@ -676,7 +804,7 @@ myclientTLS (WiFiClientSecure & client, byte * sha1)
 }
 
 void
-ESP8266RevK::clientTLS (WiFiClientSecure & client, byte * sha1)
+ESP8266RevK::clientTLS (WiFiClientSecure & client, const byte * sha1)
 {
    return myclientTLS (client, sha1);
 }
