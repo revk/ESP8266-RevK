@@ -6,19 +6,19 @@
 // If you build, set your own OTA server
 ESP8266RevK revk(NULL, __DATE__ " " __TIME__,"ota.revk.uk");
 
-boolean app_setting(const char *setting, const byte *value, size_t len)
-{ // Called for settings retrieved from EEPROM, return true if setting is OK
-  return false; // Failed
+const char* app_setting(const char *tag, const byte *value, size_t len)
+{ // Called for settings retrieved from EEPROM, return PSTR for tag if setting is OK
+  return NULL; // Failed
 }
 
-boolean app_cmnd(const char*suffix, const byte *message, size_t len)
+boolean app_command(const char*tag, const byte *message, size_t len)
 { // Called for incoming MQTT messages, return true if message is OK
   return false; // Failed
 }
 
 void setup()
 {
- revk.upgrade(); // Load real app
+ revk.ota(); // Load real app
 }
 
 void loop()
