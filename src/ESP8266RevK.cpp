@@ -42,8 +42,6 @@ static int appnamelen = 4;      // May be truncated
 static long do_restart = false; // Do a restart in main loop cleanly
 static long do_upgrade = false; // Do an OTA upgrade
 
-static boolean otausetls = true;        // Use TLS for OTA (only set in constructor)
-
 // Some defaults
 #define	OTAHOST			"excalibur.bec.aa.net.uk"
 #define	WIFISSID		"IoT"
@@ -263,20 +261,13 @@ upgrade ()
       myclientTLS (client, otasha1);
       if (ESPhttpUpdate.update (client, String (otahost), 443, String (url)))
          Serial.println (ESPhttpUpdate.getLastErrorString ());
-   } else if (otausetls)
+   } else
    {
       debugf ("Upgrade secure (LE) %s", otahost);
       delay (100);
       WiFiClientSecure client;
       myclientTLS (client);
       ESPhttpUpdate.update (client, String (otahost), 443, String (url));
-   } else
-   {
-      debugf ("Upgrade insecure %s", otahost);
-      delay (100);
-      WiFiClient client;
-      myclient (client);
-      ESPhttpUpdate.update (client, String (otahost), 80, String (url));
    }
    // TODO check flash size, etc and load Minimal instead if too big
    debugf ("Upgrade done:%s", ESPhttpUpdate.getLastErrorString ().c_str ());
@@ -455,7 +446,8 @@ message (const char *topic, byte * payload, unsigned int len)
    }
 }
 
-ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const char *myotahost, boolean usetls)
+ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const char *myotahost,
+                          const char *mywifissid, const char *mywifipass, const char *mymqtthost)
 {
 #ifdef REVKDEBUG
    Serial.begin (115200);
@@ -476,14 +468,21 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const
    setlen += appnamelen + 1;
    debugf ("Application start %.*s %s", appnamelen, appname, appversion);
    loadsettings ();
-   otausetls = usetls;
+   // Override defaults
    if (!otahost && myotahost)
       otahost = myotahost;
+   if (!wifissid && mywifissid)
+      wifissid = mywifissid;
+   if (!wifipass && mywifipass)
+      wifipass = mywifipass;
+   if (!mqtthost && mymqtthost)
+      mqtthost = mymqtthost;
    if (!hostname)
    {
       hostname = (const char *) malloc (7);
       snprintf_P ((char *) hostname, 7, PSTR ("%06X"), ESP.getChipId ());
    }
+   // My defaults
    if (!otahost)
       otahost = PCPY (OTAHOST);
    if (!wifissid)
