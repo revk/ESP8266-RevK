@@ -622,7 +622,7 @@ ESP8266RevK::loop ()
          mqttretry = 0;
          mqttbackoff = 1000;
          pub (prefixstate, NULL, F ("1"));
-         pub (prefixinfo, NULL, F ("Online ver %s, up %d.%03d, flash %dKiB"), appversion, now / 1000, now % 1000,
+         pub (prefixinfo, NULL, F ("Ver %s, up %d.%03d, flash %dKiB"), appversion, now / 1000, now % 1000,
               ESP.getFlashChipRealSize () / 1024);
          // Specific device
          snprintf_P (topic, sizeof (topic), PSTR ("%s/%.*s/%s/#"), prefixcommand, appnamelen, appname, hostname);
