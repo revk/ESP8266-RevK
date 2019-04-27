@@ -59,12 +59,12 @@ class ESP8266RevK : private PubSubClient {
    boolean info(const __FlashStringHelper *tag, const __FlashStringHelper *fmt=NULL, ...); // Publish error
    boolean pub (const char * prefix, const char * suffix, const __FlashStringHelper * fmt, ...); // Publish general
    boolean pub(const __FlashStringHelper *prefix, const __FlashStringHelper *tag, const __FlashStringHelper *fmt=NULL, ...);	// Publish general
-   boolean pub(int qos, boolean retain, const __FlashStringHelper *prefix, const __FlashStringHelper *tag,  const __FlashStringHelper *fmt=NULL, ...);	// Publish general (with qos)
-   boolean pub(int qos, boolean retain, const char *prefix, const char *tag,  const __FlashStringHelper *fmt=NULL, ...);	// Publish general (with qos)
+   boolean pub(boolean retain, const __FlashStringHelper *prefix, const __FlashStringHelper *tag,  const __FlashStringHelper *fmt=NULL, ...);	// Publish general (with retain)
+   boolean pub(boolean retain, const char *prefix, const char *tag,  const __FlashStringHelper *fmt=NULL, ...);	// Publish general (with retain)
    boolean setting(const __FlashStringHelper *tag,const char*value=NULL); // Apply a setting (gets written to EEPROM)
    boolean setting(const __FlashStringHelper *tag,const byte*value=NULL,size_t len=0); // Apply a setting (gets written to EEPROM)
-   boolean ota();	// Do upgrade
-   boolean restart();	// Save settings and restart
+   boolean ota(int delay=0);	// Do upgrade
+   boolean restart(int delay=0);	// Save settings and restart
  private:
 };
 
