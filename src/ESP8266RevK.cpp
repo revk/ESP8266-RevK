@@ -27,9 +27,10 @@ extern "C"
               // Local functions
 static void myclient (WiFiClient & client);
 static void myclientTLS (WiFiClientSecure &, const byte * sha1 = NULL);
+static boolean pub (int qos, boolean retain, const char *prefix, const char *suffix, const __FlashStringHelper * fmt, ...);
 static boolean pub (const char *prefix, const char *suffix, const __FlashStringHelper * fmt, ...);
 static boolean pub (const __FlashStringHelper * prefix, const __FlashStringHelper * suffix, const __FlashStringHelper * fmt, ...);
-static boolean pub (const __FlashStringHelper * prefix, const __FlashStringHelper * suffix, int qos, boolean retain,
+static boolean pub (int qos, boolean retain, const __FlashStringHelper * prefix, const __FlashStringHelper * suffix,
                     const __FlashStringHelper * fmt, ...);
 boolean savesettings ();
 boolean applysetting (const char *name, const byte * value, size_t len);
@@ -553,7 +554,7 @@ ESP8266RevK::loop ()
       debug ("Time to do restart");
       savesettings ();
       pub (prefixinfo, NULL, F ("Restarting"));
-      pub (prefixstate, NULL, 0, true, F ("0"));
+      pub (0, true, prefixstate, NULL, F ("0"));
       mqtt.disconnect ();
       delay (100);
       ESP.restart ();
@@ -563,7 +564,7 @@ ESP8266RevK::loop ()
    {
       debug ("Time to do upgrade");
       pub (prefixinfo, "upgrade", F ("OTA upgrade %s"), otahost);
-      pub (prefixstate, NULL, 0, true, F ("0"));
+      pub (0, true, prefixstate, NULL, F ("0"));
       mqtt.disconnect ();
       delay (100);
       upgrade ();
@@ -621,7 +622,7 @@ ESP8266RevK::loop ()
          // Worked
          mqttretry = 0;
          mqttbackoff = 1000;
-         pub (prefixstate, NULL, F ("1"));
+         pub (1, true, prefixstate, NULL, F ("1"));
          pub (prefixinfo, NULL, F ("Ver %s, up %d.%03d, flash %dKiB"), appversion, now / 1000, now % 1000,
               ESP.getFlashChipRealSize () / 1024);
          // Specific device
@@ -662,7 +663,7 @@ ESP8266RevK::loop ()
 }
 
 static boolean
-pubap (const __FlashStringHelper * prefix, const __FlashStringHelper * suffix, int qos, boolean retain,
+pubap (int qos, boolean retain, const __FlashStringHelper * prefix, const __FlashStringHelper * suffix,
        const __FlashStringHelper * fmt, va_list ap)
 {
    if (!mqtthost || !hostname)
@@ -680,7 +681,7 @@ pubap (const __FlashStringHelper * prefix, const __FlashStringHelper * suffix, i
 }
 
 static boolean
-pubap (const char *prefix, const __FlashStringHelper * suffix, int qos, boolean retain, const __FlashStringHelper * fmt, va_list ap)
+pubap (int qos, boolean retain, const char *prefix, const __FlashStringHelper * suffix, const __FlashStringHelper * fmt, va_list ap)
 {
    if (!mqtthost || !hostname)
       return false;             // No MQTT
@@ -697,7 +698,7 @@ pubap (const char *prefix, const __FlashStringHelper * suffix, int qos, boolean 
 }
 
 static boolean
-pubap (const char *prefix, const char *suffix, int qos, boolean retain, const __FlashStringHelper * fmt, va_list ap)
+pubap (int qos, boolean retain, const char *prefix, const char *suffix, const __FlashStringHelper * fmt, va_list ap)
 {
    if (!mqtthost || !hostname)
       return false;             // No MQTT
@@ -718,7 +719,17 @@ pub (const char *prefix, const char *suffix, const __FlashStringHelper * fmt, ..
 {
    va_list ap;
    va_start (ap, fmt);
-   boolean ret = pubap (prefix, suffix, 1, false, fmt, ap);
+   boolean ret = pubap (1, false, prefix, suffix, fmt, ap);
+   va_end (ap);
+   return ret;
+}
+
+static boolean
+pub (int qos, boolean retain, const char *prefix, const char *suffix, const __FlashStringHelper * fmt, ...)
+{
+   va_list ap;
+   va_start (ap, fmt);
+   boolean ret = pubap (qos, retain, prefix, suffix, fmt, ap);
    va_end (ap);
    return ret;
 }
@@ -728,18 +739,18 @@ pub (const __FlashStringHelper * prefix, const __FlashStringHelper * suffix, con
 {
    va_list ap;
    va_start (ap, fmt);
-   boolean ret = pubap (prefix, suffix, 1, false, fmt, ap);
+   boolean ret = pubap (1, false, prefix, suffix, fmt, ap);
    va_end (ap);
    return ret;
 }
 
 static boolean
-pub (const __FlashStringHelper * prefix, const __FlashStringHelper * suffix, int qos, boolean retain,
+pub (int qos, boolean retain, const __FlashStringHelper * prefix, const __FlashStringHelper * suffix,
      const __FlashStringHelper * fmt, ...)
 {
    va_list ap;
    va_start (ap, fmt);
-   boolean ret = pubap (prefix, suffix, qos, retain, fmt, ap);
+   boolean ret = pubap (qos, retain, prefix, suffix, fmt, ap);
    va_end (ap);
    return ret;
 }
@@ -749,7 +760,7 @@ ESP8266RevK::state (const __FlashStringHelper * suffix, const __FlashStringHelpe
 {
    va_list ap;
    va_start (ap, fmt);
-   boolean ret = pubap (prefixstate, suffix, 1, true, fmt, ap);
+   boolean ret = pubap (1, true, prefixstate, suffix, fmt, ap);
    va_end (ap);
    return ret;
 }
@@ -759,7 +770,7 @@ ESP8266RevK::event (const __FlashStringHelper * suffix, const __FlashStringHelpe
 {
    va_list ap;
    va_start (ap, fmt);
-   boolean ret = pubap (prefixevent, suffix, 1, false, fmt, ap);
+   boolean ret = pubap (1, false, prefixevent, suffix, fmt, ap);
    va_end (ap);
    return ret;
 }
@@ -769,7 +780,7 @@ ESP8266RevK::info (const __FlashStringHelper * suffix, const __FlashStringHelper
 {
    va_list ap;
    va_start (ap, fmt);
-   boolean ret = pubap (prefixinfo, suffix, 1, false, fmt, ap);
+   boolean ret = pubap (1, false, prefixinfo, suffix, fmt, ap);
    va_end (ap);
    return ret;
 }
@@ -779,7 +790,7 @@ ESP8266RevK::error (const __FlashStringHelper * suffix, const __FlashStringHelpe
 {
    va_list ap;
    va_start (ap, fmt);
-   boolean ret = pubap (prefixerror, suffix, 1, false, fmt, ap);
+   boolean ret = pubap (1, false, prefixerror, suffix, fmt, ap);
    va_end (ap);
    return ret;
 }
@@ -790,7 +801,7 @@ boolean ESP8266RevK::pub (const char *prefix, const char *suffix, const __FlashS
       ap;
    va_start (ap, fmt);
    boolean
-      ret = pubap (prefix, suffix, 1, false, fmt, ap);
+      ret = pubap (1, false, prefix, suffix, fmt, ap);
    va_end (ap);
    return ret;
 }
@@ -800,18 +811,28 @@ boolean
 {
    va_list ap;
    va_start (ap, fmt);
-   boolean ret = pubap (prefix, suffix, 1, false, fmt, ap);
+   boolean ret = pubap (1, false, prefix, suffix, fmt, ap);
    va_end (ap);
    return ret;
 }
 
 boolean
-   ESP8266RevK::pub (const __FlashStringHelper * prefix, const __FlashStringHelper * suffix, int qos, boolean retain,
+ESP8266RevK::pub (int qos, boolean retain, const char *prefix, const char *suffix, const __FlashStringHelper * fmt, ...)
+{
+   va_list ap;
+   va_start (ap, fmt);
+   boolean ret = pubap (qos, retain, prefix, suffix, fmt, ap);
+   va_end (ap);
+   return ret;
+}
+
+boolean
+   ESP8266RevK::pub (int qos, boolean retain, const __FlashStringHelper * prefix, const __FlashStringHelper * suffix,
                      const __FlashStringHelper * fmt, ...)
 {
    va_list ap;
    va_start (ap, fmt);
-   boolean ret = pubap (prefix, suffix, qos, retain, fmt, ap);
+   boolean ret = pubap (qos, retain, prefix, suffix, fmt, ap);
    va_end (ap);
    return ret;
 }
