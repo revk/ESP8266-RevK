@@ -544,16 +544,16 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const
    debug ("RevK init done");
 }
 
-boolean ESP8266RevK::loop ()
+boolean
+ESP8266RevK::loop ()
 {
-   unsigned long
-      now = millis ();          // Use with care as wraps every 49 days
+   unsigned long now = millis ();       // Use with care as wraps every 49 days
    if (do_restart)
    {
       debug ("Time to do restart");
       savesettings ();
       pub (prefixinfo, NULL, F ("Restarting"));
-      pub (prefixstate, NULL, F ("0"));
+      pub (prefixstate, NULL, 0, true, F ("0"));
       mqtt.disconnect ();
       delay (100);
       ESP.restart ();
@@ -573,14 +573,10 @@ boolean ESP8266RevK::loop ()
    if (settingsupdate && (int) (settingsupdate - now) < 0)
       savesettings ();
    // WiFi reconnect
-   static long
-      sntpbackoff = 100;
-   static long
-      sntptry = sntpbackoff;
-   static long
-      wifiretry = 0;
-   static boolean
-      wificonnected = 0;
+   static long sntpbackoff = 100;
+   static long sntptry = sntpbackoff;
+   static long wifiretry = 0;
+   static boolean wificonnected = 0;
    if (wificonnected)
    {                            // Connected
       if (((wifissid2 || wifissid3) ? (WiFiMulti.run () != WL_CONNECTED) : (WiFi.status () != WL_CONNECTED)))
@@ -610,18 +606,14 @@ boolean ESP8266RevK::loop ()
       sntp_init ();
    }
    // MQTT reconnnect
-   static long
-      mqttbackoff = 100;
-   static long
-      mqttretry = mqttbackoff;
+   static long mqttbackoff = 100;
+   static long mqttretry = mqttbackoff;
    // Note, signed to allow for wrapping millis
    if (mqtthost && !mqtt.loop () && (!mqttretry || (int) (mqttretry - now) < 0) && wificonnected)
    {
-      char
-         topic[101];
+      char topic[101];
       snprintf_P (topic, sizeof (topic), PSTR ("%s/%.*s/%s"), prefixstate, appnamelen, appname, hostname);
-      const char *
-         host = mqttbackup ? mqtthost2 : mqtthost;
+      const char *host = mqttbackup ? mqtthost2 : mqtthost;
       if (mqtt.connect (hostname, mqttbackup ? NULL : mqttuser, mqttbackup ? NULL : mqttpass, topic, MQTTQOS1, true, "0"))
       {
          app_command ("connect", (const byte *) host, strlen ((char *) host));
@@ -669,60 +661,51 @@ boolean ESP8266RevK::loop ()
    return wificonnected;
 }
 
-static
-   boolean
+static boolean
 pubap (const __FlashStringHelper * prefix, const __FlashStringHelper * suffix, int qos, boolean retain,
        const __FlashStringHelper * fmt, va_list ap)
 {
    if (!mqtthost || !hostname)
       return false;             // No MQTT
-   char
-      temp[128] = {
+   char temp[128] = {
    };
    if (fmt)
       vsnprintf_P (temp, sizeof (temp), (PGM_P) fmt, ap);
-   char
-      topic[101];
+   char topic[101];
    if (suffix)
-      snprintf_P (topic, sizeof (topic), PSTR ("%S/%.*s/%s/%s"), (PGM_P) prefix, appnamelen, appname, hostname, suffix);
+      snprintf_P (topic, sizeof (topic), PSTR ("%S/%.*s/%s/%S"), (PGM_P) prefix, appnamelen, appname, hostname, (PGM_P) suffix);
    else
       snprintf_P (topic, sizeof (topic), PSTR ("%S/%.*s/%s"), (PGM_P) prefix, appnamelen, appname, hostname);
    return mqtt.publish (topic, temp);
 }
 
-static
-   boolean
+static boolean
 pubap (const char *prefix, const __FlashStringHelper * suffix, int qos, boolean retain, const __FlashStringHelper * fmt, va_list ap)
 {
    if (!mqtthost || !hostname)
       return false;             // No MQTT
-   char
-      temp[128] = {
+   char temp[128] = {
    };
    if (fmt)
       vsnprintf_P (temp, sizeof (temp), (PGM_P) fmt, ap);
-   char
-      topic[101];
+   char topic[101];
    if (suffix)
-      snprintf_P (topic, sizeof (topic), PSTR ("%s/%.*s/%s/%s"), prefix, appnamelen, appname, hostname, suffix);
+      snprintf_P (topic, sizeof (topic), PSTR ("%s/%.*s/%s/%S"), prefix, appnamelen, appname, hostname, (PGM_P) suffix);
    else
       snprintf_P (topic, sizeof (topic), PSTR ("%s/%.*s/%s"), prefix, appnamelen, appname, hostname);
    return mqtt.publish (topic, temp);
 }
 
-static
-   boolean
+static boolean
 pubap (const char *prefix, const char *suffix, int qos, boolean retain, const __FlashStringHelper * fmt, va_list ap)
 {
    if (!mqtthost || !hostname)
       return false;             // No MQTT
-   char
-      temp[128] = {
+   char temp[128] = {
    };
    if (fmt)
       vsnprintf_P (temp, sizeof (temp), (PGM_P) fmt, ap);
-   char
-      topic[101];
+   char topic[101];
    if (suffix)
       snprintf_P (topic, sizeof (topic), PSTR ("%s/%.*s/%s/%s"), prefix, appnamelen, appname, hostname, suffix);
    else
@@ -730,96 +713,84 @@ pubap (const char *prefix, const char *suffix, int qos, boolean retain, const __
    return mqtt.publish (topic, temp);
 }
 
-static
-   boolean
+static boolean
 pub (const char *prefix, const char *suffix, const __FlashStringHelper * fmt, ...)
 {
-   va_list
-      ap;
+   va_list ap;
    va_start (ap, fmt);
-   boolean
-      ret = pubap (prefix, suffix, 1, false, fmt, ap);
+   boolean ret = pubap (prefix, suffix, 1, false, fmt, ap);
    va_end (ap);
    return ret;
 }
 
-static
-   boolean
+static boolean
 pub (const __FlashStringHelper * prefix, const __FlashStringHelper * suffix, const __FlashStringHelper * fmt, ...)
 {
-   va_list
-      ap;
+   va_list ap;
    va_start (ap, fmt);
-   boolean
-      ret = pubap (prefix, suffix, 1, false, fmt, ap);
+   boolean ret = pubap (prefix, suffix, 1, false, fmt, ap);
    va_end (ap);
    return ret;
 }
 
-static
-   boolean
+static boolean
 pub (const __FlashStringHelper * prefix, const __FlashStringHelper * suffix, int qos, boolean retain,
      const __FlashStringHelper * fmt, ...)
 {
-   va_list
-      ap;
+   va_list ap;
    va_start (ap, fmt);
-   boolean
-      ret = pubap (prefix, suffix, qos, retain, fmt, ap);
-   va_end (ap);
-   return ret;
-}
-
-boolean ESP8266RevK::state (const __FlashStringHelper * suffix, const __FlashStringHelper * fmt, ...)
-{
-   va_list
-      ap;
-   va_start (ap, fmt);
-   boolean
-      ret = pubap (prefixstate, suffix, 1, true, fmt, ap);
-   va_end (ap);
-   return ret;
-}
-
-boolean ESP8266RevK::event (const __FlashStringHelper * suffix, const __FlashStringHelper * fmt, ...)
-{
-   va_list
-      ap;
-   va_start (ap, fmt);
-   boolean
-      ret = pubap (prefixevent, suffix, 1, false, fmt, ap);
-   va_end (ap);
-   return ret;
-}
-
-boolean ESP8266RevK::info (const __FlashStringHelper * suffix, const __FlashStringHelper * fmt, ...)
-{
-   va_list
-      ap;
-   va_start (ap, fmt);
-   boolean
-      ret = pubap (prefixinfo, suffix, 1, false, fmt, ap);
-   va_end (ap);
-   return ret;
-}
-
-boolean ESP8266RevK::error (const __FlashStringHelper * suffix, const __FlashStringHelper * fmt, ...)
-{
-   va_list
-      ap;
-   va_start (ap, fmt);
-   boolean
-      ret = pubap (prefixerror, suffix, 1, false, fmt, ap);
+   boolean ret = pubap (prefix, suffix, qos, retain, fmt, ap);
    va_end (ap);
    return ret;
 }
 
 boolean
-ESP8266RevK::pub (const char *prefix, const char *suffix, const __FlashStringHelper * fmt, ...)
+ESP8266RevK::state (const __FlashStringHelper * suffix, const __FlashStringHelper * fmt, ...)
 {
    va_list ap;
    va_start (ap, fmt);
-   boolean ret = pubap (prefix, suffix, 1, false, fmt, ap);
+   boolean ret = pubap (prefixstate, suffix, 1, true, fmt, ap);
+   va_end (ap);
+   return ret;
+}
+
+boolean
+ESP8266RevK::event (const __FlashStringHelper * suffix, const __FlashStringHelper * fmt, ...)
+{
+   va_list ap;
+   va_start (ap, fmt);
+   boolean ret = pubap (prefixevent, suffix, 1, false, fmt, ap);
+   va_end (ap);
+   return ret;
+}
+
+boolean
+ESP8266RevK::info (const __FlashStringHelper * suffix, const __FlashStringHelper * fmt, ...)
+{
+   va_list ap;
+   va_start (ap, fmt);
+   boolean ret = pubap (prefixinfo, suffix, 1, false, fmt, ap);
+   va_end (ap);
+   return ret;
+}
+
+boolean
+ESP8266RevK::error (const __FlashStringHelper * suffix, const __FlashStringHelper * fmt, ...)
+{
+   va_list ap;
+   va_start (ap, fmt);
+   boolean ret = pubap (prefixerror, suffix, 1, false, fmt, ap);
+   va_end (ap);
+   return ret;
+}
+
+boolean ESP8266RevK::pub (const char *prefix, const char *suffix, const __FlashStringHelper * fmt, ...)
+{
+   va_list
+      ap;
+   va_start (ap, fmt);
+   boolean
+      ret = pubap (prefix, suffix, 1, false, fmt, ap);
    va_end (ap);
    return ret;
 }
@@ -845,29 +816,31 @@ boolean
    return ret;
 }
 
-boolean ESP8266RevK::setting (const __FlashStringHelper * tag, const char *value)
+boolean
+ESP8266RevK::setting (const __FlashStringHelper * tag, const char *value)
 {
-   char
-      temp[50];
+   char temp[50];
    strncpy_P (temp, (PGM_P) tag, sizeof (temp));
    return applysetting (temp, (const byte *) value, strlen (value));
 }
 
-boolean ESP8266RevK::setting (const __FlashStringHelper * tag, const byte * value, size_t len)
+boolean
+ESP8266RevK::setting (const __FlashStringHelper * tag, const byte * value, size_t len)
 {
    // Set a setting
-   char
-      temp[50];
+   char temp[50];
    strncpy_P (temp, (PGM_P) tag, sizeof (temp));
    return applysetting (temp, value, len);
 }
 
-boolean ESP8266RevK::ota ()
+boolean
+ESP8266RevK::ota ()
 {
    do_upgrade = true;
 }
 
-boolean ESP8266RevK::restart ()
+boolean
+ESP8266RevK::restart ()
 {
    do_restart = true;
 }
@@ -884,13 +857,10 @@ myclientTLS (WiFiClientSecure & client, const byte * sha1)
       client.setFingerprint (sha1);
    else
    {
-      unsigned char
-         tls_ca_cert[] = TLS_CA_CERT;
+      unsigned char tls_ca_cert[] = TLS_CA_CERT;
       client.setCACert (tls_ca_cert, TLS_CA_CERT_LENGTH);
    }
-   static
-      BearSSL::Session
-      sess;
+   static BearSSL::Session sess;
    client.setSession (&sess);
 }
 
