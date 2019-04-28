@@ -580,14 +580,12 @@ boolean ESP8266RevK::loop ()
       sntptry = sntpbackoff;
    static long
       wifiretry = 0;
-   static boolean
-      wificonnected = 0;
    if (wificonnected)
    {                            // Connected
       if (((wifissid2 || wifissid3) ? (WiFiMulti.run () != WL_CONNECTED) : (WiFi.status () != WL_CONNECTED)))
       {
          debug ("WiFi disconnected");
-         wificonnected = 0;
+         wificonnected = false;
          mqtt.disconnect ();
       }
    } else
@@ -595,7 +593,7 @@ boolean ESP8266RevK::loop ()
       if (((wifissid2 || wifissid3) ? (WiFiMulti.run () == WL_CONNECTED) : (WiFi.status () == WL_CONNECTED)))
       {
          debug ("WiFi connected");
-         wificonnected = 1;
+         wificonnected = true;
          sntpbackoff = 100;
          sntptry = now;
       }
@@ -625,8 +623,6 @@ boolean ESP8266RevK::loop ()
          host = mqttbackup ? mqtthost2 : mqtthost;
       if (mqtt.connect (hostname, mqttbackup ? NULL : mqttuser, mqttbackup ? NULL : mqttpass, topic, MQTTQOS1, true, "0"))
       {
-         app_command ("connect", (const byte *) host, strlen ((char *) host));
-         debugf ("MQTT connected %s", host);
          // Worked
          mqttretry = 0;
          mqttbackoff = 1000;
@@ -643,10 +639,14 @@ boolean ESP8266RevK::loop ()
          mqtt.subscribe (topic);
          snprintf_P (topic, sizeof (topic), PSTR ("%s/%.*s/*/#"), prefixsetting, appnamelen, appname);
          mqtt.subscribe (topic);
+         mqttconnected = true;
+         app_command ("connect", (const byte *) host, strlen ((char *) host));
+         debugf ("MQTT connected %s", host);
       } else
       {
-         if (!mqttretry)
+         if (mqttconnected)
          {
+            mqttconnected = false;
             app_command ("disconnect", (const byte *) host, strlen ((char *) host));
             debugf ("MQTT disconnected %s", host);
          }

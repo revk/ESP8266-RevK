@@ -69,6 +69,9 @@ class ESP8266RevK : private PubSubClient {
    boolean setting(const __FlashStringHelper *tag,const byte*value=NULL,size_t len=0); // Apply a setting (gets written to EEPROM)
    boolean ota(int delay=0);	// Do upgrade
    boolean restart(int delay=0);	// Save settings and restart
+
+   boolean wificonnected=false;
+   boolean mqttconnected=false;
  private:
 };
 
