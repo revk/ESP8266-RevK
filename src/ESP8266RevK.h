@@ -34,6 +34,14 @@
 
 //#define REVKDEBUG               // If defined, does serial debug at 74880
 
+#ifdef REVKDEBUG
+#define debugf(fmt,...) do{Serial.printf_P(PSTR(fmt "\n"),__VA_ARGS__);Serial.flush();}while(0)
+#define debug(str) do{Serial.printf(PSTR("%S\n"),PSTR(str));Serial.flush();}while(0)
+#else
+#define debugf(...) do{}while(0)
+#define debug(...) do{}while(0)
+#endif
+
 #ifndef ESP8266RevK_H
 #define ESP8266RevK_H
 
