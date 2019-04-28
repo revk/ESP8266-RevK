@@ -759,7 +759,27 @@ ESP8266RevK::state (const __FlashStringHelper * suffix, const __FlashStringHelpe
 }
 
 boolean
+ESP8266RevK::state (const char * suffix, const __FlashStringHelper * fmt, ...)
+{
+   va_list ap;
+   va_start (ap, fmt);
+   boolean ret = pubap (true, prefixstate, suffix, fmt, ap);
+   va_end (ap);
+   return ret;
+}
+
+boolean
 ESP8266RevK::event (const __FlashStringHelper * suffix, const __FlashStringHelper * fmt, ...)
+{
+   va_list ap;
+   va_start (ap, fmt);
+   boolean ret = pubap (false, prefixevent, suffix, fmt, ap);
+   va_end (ap);
+   return ret;
+}
+
+boolean
+ESP8266RevK::event (const char * suffix, const __FlashStringHelper * fmt, ...)
 {
    va_list ap;
    va_start (ap, fmt);
@@ -779,7 +799,27 @@ ESP8266RevK::info (const __FlashStringHelper * suffix, const __FlashStringHelper
 }
 
 boolean
+ESP8266RevK::info (const char * suffix, const __FlashStringHelper * fmt, ...)
+{
+   va_list ap;
+   va_start (ap, fmt);
+   boolean ret = pubap (false, prefixinfo, suffix, fmt, ap);
+   va_end (ap);
+   return ret;
+}
+
+boolean
 ESP8266RevK::error (const __FlashStringHelper * suffix, const __FlashStringHelper * fmt, ...)
+{
+   va_list ap;
+   va_start (ap, fmt);
+   boolean ret = pubap (false, prefixerror, suffix, fmt, ap);
+   va_end (ap);
+   return ret;
+}
+
+boolean
+ESP8266RevK::error (const char * suffix, const __FlashStringHelper * fmt, ...)
 {
    va_list ap;
    va_start (ap, fmt);
