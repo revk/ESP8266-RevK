@@ -374,13 +374,6 @@ applysetting (const char *tag, const byte * value, size_t len)
    }
    if (!(newtag = localsetting (tag, val, len)) && !(newtag = app_setting (tag, val, len)))
    {                            // Setting not accepted
-      if (appnamelen && *ss)
-      {                         // Delete
-         setting_t *s = *ss;
-         *ss = s->next;
-         free (s);
-         settingsupdate = ((millis () + 1000) ? : 1);
-      }
       debugf ("Bad setting %s", tag);
       if (news)
          free (news);
