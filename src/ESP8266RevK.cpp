@@ -543,7 +543,6 @@ ESP8266RevK::loop ()
    unsigned long now = millis ();       // Use with care as wraps every 49 days
    if (do_restart && (int) (do_restart - now) < 0)
    {
-      debug ("Time to do restart");
       savesettings ();
       pub (prefixinfo, NULL, F ("Restarting"));
       pub (true, prefixstate, NULL, F ("0"));
@@ -554,7 +553,6 @@ ESP8266RevK::loop ()
    }
    if (do_upgrade && (int) (do_upgrade - now) < 0)
    {
-      debug ("Time to do upgrade");
       pub (prefixinfo, "upgrade", F ("OTA upgrade %s"), otahost);
       pub (true, prefixstate, NULL, F ("0"));
       mqtt.disconnect ();
