@@ -469,6 +469,8 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const
       wifipass = mywifipass;
    if (!mqtthost && mymqtthost)
       mqtthost = mymqtthost;
+   if (!mqtthost2 && mymqtthost)
+      mqtthost2 = mymqtthost;
    if (!hostname)
    {
       hostname = (const char *) malloc (7);
