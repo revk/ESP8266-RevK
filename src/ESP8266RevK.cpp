@@ -212,7 +212,7 @@ loadsettings ()
 }
 
 boolean
-upgrade ()
+upgrade (int appnamelen, const char *appname)
 {                               // Do OTA upgrade
    savesettings ();
    char url[200];
@@ -244,25 +244,23 @@ upgrade ()
          p += snprintf_P (url + p, e - p, PSTR ("%S"), PSTR (".ino." BOARD ".bin"));
       url[p] = 0;
    }
-   ESPhttpUpdate.rebootOnUpdate (false);        // We 'll do the reboot
    if (otasha1)
    {
-      debugf ("Upgrade secure %s", otahost);
+      debugf ("Upgrade secure http://%s%s", otahost, url);
       delay (100);
       WiFiClientSecure client;
       myclientTLS (client, otasha1);
-      if (ESPhttpUpdate.update (client, String (otahost), 443, String (url)))
-         Serial.println (ESPhttpUpdate.getLastErrorString ());
+      ESPhttpUpdate.update (client, String (otahost), 443, String (url));
    } else
    {
-      debugf ("Upgrade secure (LE) %s", otahost);
+      debugf ("Upgrade secure (LE) https://%s%s", otahost, url);
       delay (100);
       WiFiClientSecure client;
       myclientTLS (client);
       ESPhttpUpdate.update (client, String (otahost), 443, String (url));
    }
    // TODO check flash size, etc and load Minimal instead if too big
-   debugf ("Upgrade done:%s", ESPhttpUpdate.getLastErrorString ().c_str ());
+   debugf ("Upgrade failed:%s", ESPhttpUpdate.getLastErrorString ().c_str ());
    delay (100);
    ESP.restart ();              // Boot
    return false;                // Should not get here
@@ -417,7 +415,10 @@ message (const char *topic, byte * payload, unsigned int len)
    {
       if (!strcasecmp_P (p, PSTR ("upgrade")))
       {                         // OTA upgrade
-         do_upgrade = (millis ()? : 1);
+         if (len)
+            upgrade (len, (const char *) payload);      // App specific
+         else
+            do_upgrade = (millis ()? : 1);
          return;
       }
       if (!strcasecmp_P (p, PSTR ("restart")))
@@ -559,7 +560,7 @@ boolean ESP8266RevK::loop ()
       pub (true, prefixstate, NULL, F ("0"));
       mqtt.disconnect ();
       delay (100);
-      upgrade ();
+      upgrade (appnamelen, appname);
       return false;             // Uh
    }
    // Save settings
@@ -955,9 +956,7 @@ myclientTLS (WiFiClientSecure & client, const byte * sha1)
          tls_ca_cert[] = TLS_CA_CERT;
       client.setCACert (tls_ca_cert, TLS_CA_CERT_LENGTH);
    }
-   static
-      BearSSL::Session
-      sess;
+   static BearSSL::Session sess;
    client.setSession (&sess);
 }
 
@@ -965,4 +964,19 @@ void
 ESP8266RevK::clientTLS (WiFiClientSecure & client, const byte * sha1)
 {
    return myclientTLS (client, sha1);
+}
+
+void
+ESP8266RevK::sleep (unsigned long s)
+{                               // Total sleep for a while
+   debugf ("Sleeping for %d seconds, good night...", s);
+   pub (true, prefixstate, NULL, F ("0"));
+   delay (100);
+   mqtt.disconnect ();
+   delay (100);
+   wifi_station_disconnect ();
+   delay (100);
+   ESP.deepSleep (s * 1000000);
+   debug("WTF");
+   // Goes back to reset at this point - connect GPIO16 to RST
 }
