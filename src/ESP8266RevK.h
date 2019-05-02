@@ -85,6 +85,7 @@ class ESP8266RevK : private PubSubClient {
 
    boolean wificonnected=false;
    boolean mqttconnected=false;
+   const char *chipid;
  private:
 };
 
