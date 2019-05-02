@@ -436,7 +436,7 @@ message (const char *topic, byte * payload, unsigned int len)
          return;
       }
       if (!strcasecmp_P (p, PSTR ("factory")) && len == appnamelen + 6 && !memcmp (mychipid, payload, 6)
-          && !memcmp (appname, payload + 6, len))
+          && !memcmp (appname, payload + 6, appnamelen))
       {                         // Factory reset
          settings_reset ();
          do_restart = millis ();
@@ -458,7 +458,7 @@ message (const char *topic, byte * payload, unsigned int len)
 ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const char *myotahost,
                           const char *mywifissid, const char *mywifipass, const char *mymqtthost)
 {
-   snprintf_P ((char *) mychipid, 7, PSTR ("%06X"), ESP.getChipId ());
+   snprintf_P (mychipid, sizeof(mychipid), PSTR ("%06X"), ESP.getChipId ());
    chipid = mychipid;
 #ifdef REVKDEBUG
    Serial.begin (115200);
