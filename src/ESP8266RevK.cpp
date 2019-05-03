@@ -232,8 +232,7 @@ upgrade (int appnamelen, const char *appname)
       if (appnamelen && p < e)
          p += snprintf_P (url + p, e - p, PSTR ("%.*s"), appnamelen, appname);
       else
-      {
-         //Check flash for saved app name
+      { // Check flash for saved app name
          EEPROM.begin (MAXEEPROM);
          int addr = 0;
          int l = EEPROM.read (addr++),
