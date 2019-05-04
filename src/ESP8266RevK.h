@@ -45,6 +45,30 @@
 #ifndef ESP8266RevK_H
 #define ESP8266RevK_H
 
+#define revk_settings   \
+s(hostname);            \
+s(otahost);             \
+f(otasha1,20);          \
+s(wifissid);            \
+s(wifipass);            \
+s(wifissid2);           \
+s(wifipass2);           \
+s(wifissid3);           \
+s(wifipass3);           \
+s(mqtthost);            \
+s(mqtthost2);           \
+f(mqttsha1,20);         \
+s(mqttuser);            \
+s(mqttpass);            \
+s(mqttport);            \
+s(ntphost);             \
+s(prefixcommand);       \
+s(prefixsetting);       \
+s(prefixstate);         \
+s(prefixevent);         \
+s(prefixinfo);          \
+s(prefixerror);         \
+
 #include "Arduino.h"
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
@@ -82,6 +106,12 @@ class ESP8266RevK : private PubSubClient {
    boolean ota(int delay=0);	// Do upgrade
    boolean restart(int delay=0);	// Save settings and restart
    void sleep(unsigned long s);	// Got to sleep
+
+#define s(n) const char *get_##n() // return setting
+#define f(n,b) const byte *get_##n(); // return setting
+   revk_settings
+#undef s
+#undef f
 
    boolean wificonnected=false;
    boolean mqttconnected=false;

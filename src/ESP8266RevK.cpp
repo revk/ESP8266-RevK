@@ -42,7 +42,7 @@ static char mychipid[7];
 #define	WIFIPASS		"security"
 #define MQTTHOST		"mqtt.iot"
 
-#define	settings	\
+#define	revk_settings	\
 s(hostname);		\
 s(otahost);		\
 f(otasha1,20);		\
@@ -68,7 +68,7 @@ s(prefixerror);		\
 
 #define s(name) static const char *name=NULL
 #define f(name,len) static const byte *name=NULL
-settings
+revk_settings
 #undef 	f
 #undef 	s
 typedef struct setting_s setting_t;
@@ -279,7 +279,7 @@ localsetting (const char *name, const byte * value, size_t len)
 {                               // Apply a local setting (return PROGMEM tag)
 #define s(n) do{const char*t=PSTR(#n);if(!strcmp_P(name,t)){n=(const char*)value;return t;}}while(0)
 #define f(n,l) do{const char*t=PSTR(#n);if(!strcmp_P(name,t)){if(len&&len!=l)return NULL;n=value;return t;}}while(0)
-   settings
+   revk_settings
 #undef f
 #undef s
       return NULL;
@@ -961,3 +961,9 @@ ESP8266RevK::sleep (unsigned long s)
    debug ("WTF");
    // Goes back to reset at this point - connect GPIO16 to RST
 }
+
+#define s(n) const char * ESP8266RevK::get_##n(){return n;}
+#define f(n,b) const byte * ESP8266RevK::get_##n(){return n;}
+revk_settings
+#undef f
+#undef s
