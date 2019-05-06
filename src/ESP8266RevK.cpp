@@ -31,16 +31,16 @@ boolean setting_apply (const char *name, const byte * value, size_t len);
 // App name set by constructor, expceted to be static string
 static const char *appname = NULL;      // System set from constructor as literal string
 static const char *appversion = NULL;   // System set from constructor as literal string
-static int appnamelen = 4;      // May be truncated
+static int appnamelen = 0;      // May be truncated
 static long do_restart = false; // Do a restart in main loop cleanly
 static long do_upgrade = false; // Do an OTA upgrade
 static char mychipid[7];
 
 // Some defaults
-#define	OTAHOST			"excalibur.bec.aa.net.uk"
+#define	OTAHOST			"ota.revk.uk"
 #define	WIFISSID		"IoT"
 #define	WIFIPASS		"security"
-#define MQTTHOST		"mqtt.iot"
+#define MQTTHOST		"mqtt.revk.uk"
 
 #define	revk_settings	\
 s(hostname);		\
@@ -174,15 +174,20 @@ loadsettings ()
    }
    i = 0;
    l = EEPROM.read (addr++);
-   if (l == appnamelen)
-      for (i = 0; i < appnamelen && EEPROM.read (addr++) == appname[i]; i++);
-   if (!i || i != appnamelen)
+   if (!appnamelen)
+      addr += l;                // Skip
+   else
    {
-      if (appnamelen)
-         settingsupdate = (millis ()? : 1);     // Save settings
-      debug ("EEPROM different app");
-      EEPROM.end ();
-      return false;             // Check app name
+      if (l == appnamelen)
+         for (i = 0; i < appnamelen && EEPROM.read (addr++) == appname[i]; i++);
+      if (!i || i != appnamelen)
+      {
+         if (appnamelen)
+            settingsupdate = (millis ()? : 1);  // Save settings
+         debug ("EEPROM different app");
+         EEPROM.end ();
+         return false;          // Check app name
+      }
    }
    char name[33];
    byte value[257];
@@ -220,6 +225,34 @@ loadsettings ()
    return true;
 }
 
+static int
+doupdate (char *url)
+{
+   int ret = 0;
+   pub (true, prefixstate, NULL, F ("0 OTA http://%s%s"), otahost, url);
+   delay (100);
+   mqtt.disconnect ();
+   delay (100);
+   int ok = 0;
+   if (otasha1)
+   {
+      WiFiClientSecure client;
+      myclientTLS (client, otasha1);
+      ok = ESPhttpUpdate.update (client, String (otahost), 443, String (url));
+   } else
+   {
+      WiFiClientSecure client;
+      myclientTLS (client);
+      ok = ESPhttpUpdate.update (client, String (otahost), 443, String (url));
+   }
+   mqtt.connect (hostname, mqttbackup ? NULL : mqttuser, mqttbackup ? NULL : mqttpass);
+   if (ok)
+      pub (true, prefixstate, NULL, F ("0 OTA Reboot"));
+   else
+      pub (true, prefixstate, NULL, F ("0 OTA Error %s"), ESPhttpUpdate.getLastErrorString ().c_str ());
+   return ok ? 0 : ESPhttpUpdate.getLastError ();
+}
+
 boolean
 upgrade (int appnamelen, const char *appname)
 {                               // Do OTA upgrade
@@ -229,10 +262,10 @@ upgrade (int appnamelen, const char *appname)
       int p = 0,
          e = sizeof (url) - 1;
       url[p++] = '/';
-      if (appnamelen && p < e)
+      if (appnamelen)
          p += snprintf_P (url + p, e - p, PSTR ("%.*s"), appnamelen, appname);
       else
-      { // Check flash for saved app name
+      {                         // Check flash for saved app name
          EEPROM.begin (MAXEEPROM);
          int addr = 0;
          int l = EEPROM.read (addr++),
@@ -252,25 +285,18 @@ upgrade (int appnamelen, const char *appname)
          p += snprintf_P (url + p, e - p, PSTR ("%S"), PSTR (".ino." BOARD ".bin"));
       url[p] = 0;
    }
-   if (otasha1)
-   {
-      debugf ("Upgrade secure http://%s%s", otahost, url);
-      delay (100);
-      WiFiClientSecure client;
-      myclientTLS (client, otasha1);
-      ESPhttpUpdate.update (client, String (otahost), 443, String (url));
-   } else
-   {
-      debugf ("Upgrade secure (LE) https://%s%s", otahost, url);
-      delay (100);
-      WiFiClientSecure client;
-      myclientTLS (client);
-      ESPhttpUpdate.update (client, String (otahost), 443, String (url));
-   }
-   // TODO check flash size, etc and load Minimal instead if too big
-   debugf ("Upgrade failed:%s", ESPhttpUpdate.getLastErrorString ().c_str ());
+   ESPhttpUpdate.rebootOnUpdate (false);
+   int er = doupdate (url);
+   if (er == HTTP_UE_TOO_LESS_SPACE)
+   {                            // try smaller which should then be able to load the real code.
+      snprintf_P (url, sizeof (url), PSTR ("Minimal..ino." BOARD ".bin"));
+      er = doupdate (url);
+   } else if (er)
+      er = doupdate (url);      // Do again, it seems TLS can take too long for the header check, WTF, but session is cached to should work second time
+   mqtt.disconnect ();
    delay (100);
-   ESP.restart ();              // Boot
+   //ESP.restart ();              // Boot
+   ESP.reset ();                // Boot hard
    return false;                // Should not get here
 }
 
@@ -424,7 +450,7 @@ message (const char *topic, byte * payload, unsigned int len)
       if (!strcasecmp_P (p, PSTR ("upgrade")))
       {                         // OTA upgrade
          if (len)
-            upgrade (len, (const char *) payload);      // App specific
+            upgrade (len, (const char *) payload);      // App specific - special case
          else
             do_upgrade = (millis ()? : 1);
          return;
@@ -454,17 +480,26 @@ message (const char *topic, byte * payload, unsigned int len)
    }
 }
 
+void
+preinit ()
+{
+#ifndef REVKDEBUG
+   Serial.end ();               // If needed, then begin will be used
+   pinMode (1, INPUT);
+#endif
+}
+
 ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const char *myotahost,
                           const char *mywifissid, const char *mywifipass, const char *mymqtthost)
 {
-   snprintf_P (mychipid, sizeof(mychipid), PSTR ("%06X"), ESP.getChipId ());
+   snprintf_P (mychipid, sizeof (mychipid), PSTR ("%06X"), ESP.getChipId ());
    chipid = mychipid;
 #ifdef REVKDEBUG
    Serial.begin (115200);
 #endif
+   debug("RevK start");
    if (myappname)
-   {
-      // Fudge appname - strip training.whatever.Strip leading whatever / or whatever \ (windows)
+   {                            // Fudge appname - Strip leading whatever / or whatever \ (windows)
       int i,
         l = strlen (myappname);
       for (i = l; i && myappname[i - 1] != '.' && myappname[i - 1] != '/' && myappname[i - 1] != '\\'; i--);
@@ -476,6 +511,7 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const
    }
    appversion = myappversion;
    setlen += appnamelen + 1;
+   debugf("RevK app name set %d",appnamelen);
    debugf ("Application start %.*s %s", appnamelen, appname, appversion);
    loadsettings ();
    // Override defaults
@@ -561,19 +597,14 @@ ESP8266RevK::loop ()
    if (do_restart && (int) (do_restart - now) < 0)
    {
       settings_save ();
-      pub (prefixinfo, NULL, F ("Restarting"));
-      pub (true, prefixstate, NULL, F ("0"));
+      pub (true, prefixstate, NULL, F ("0 Restart"));
       mqtt.disconnect ();
       delay (100);
-      ESP.restart ();
+      ESP.reset ();
       return false;             // Uh
    }
    if (do_upgrade && (int) (do_upgrade - now) < 0)
    {
-      pub (prefixinfo, "upgrade", F ("OTA upgrade %s"), otahost);
-      pub (true, prefixstate, NULL, F ("0"));
-      mqtt.disconnect ();
-      delay (100);
       upgrade (appnamelen, appname);
       return false;             // Uh
    }
@@ -622,7 +653,7 @@ ESP8266RevK::loop ()
       char topic[101];
       snprintf_P (topic, sizeof (topic), PSTR ("%s/%.*s/%s"), prefixstate, appnamelen, appname, hostname);
       const char *host = mqttbackup ? mqtthost2 : mqtthost;
-      if (mqtt.connect (hostname, mqttbackup ? NULL : mqttuser, mqttbackup ? NULL : mqttpass, topic, MQTTQOS1, true, "0"))
+      if (mqtt.connect (hostname, mqttbackup ? NULL : mqttuser, mqttbackup ? NULL : mqttpass, topic, MQTTQOS1, true, "0 Fail"))
       {
          // Worked
          mqttretry = 0;
@@ -639,8 +670,8 @@ ESP8266RevK::loop ()
          mqtt.subscribe (topic);
          mqttconnected = true;
          pub (true, prefixstate, NULL, F ("1"));
-         pub (prefixinfo, NULL, F ("Ver %s, up %d.%03d, flash %dKiB"), appversion, now / 1000, now % 1000,
-              ESP.getFlashChipRealSize () / 1024);
+         pub (prefixinfo, NULL, F ("Ver %s, up %d.%03d, flash %dKiB, RSSI %d"), appversion, now / 1000, now % 1000,
+              ESP.getFlashChipRealSize () / 1024, WiFi.RSSI ());
          app_command ("connect", (const byte *) host, strlen ((char *) host));
          debugf ("MQTT connected %s", host);
       } else
@@ -843,13 +874,12 @@ ESP8266RevK::error (const char *suffix, const __FlashStringHelper * fmt, ...)
    return ret;
 }
 
-boolean ESP8266RevK::pub (const char *prefix, const char *suffix, const __FlashStringHelper * fmt, ...)
+boolean
+ESP8266RevK::pub (const char *prefix, const char *suffix, const __FlashStringHelper * fmt, ...)
 {
-   va_list
-      ap;
+   va_list ap;
    va_start (ap, fmt);
-   boolean
-      ret = pubap (false, prefix, suffix, fmt, ap);
+   boolean ret = pubap (false, prefix, suffix, fmt, ap);
    va_end (ap);
    return ret;
 }
@@ -864,12 +894,13 @@ boolean
    return ret;
 }
 
-boolean
-ESP8266RevK::pub (boolean retain, const char *prefix, const char *suffix, const __FlashStringHelper * fmt, ...)
+boolean ESP8266RevK::pub (boolean retain, const char *prefix, const char *suffix, const __FlashStringHelper * fmt, ...)
 {
-   va_list ap;
+   va_list
+      ap;
    va_start (ap, fmt);
-   boolean ret = pubap (retain, prefix, suffix, fmt, ap);
+   boolean
+      ret = pubap (retain, prefix, suffix, fmt, ap);
    va_end (ap);
    return ret;
 }
@@ -951,7 +982,7 @@ ESP8266RevK::sleep (unsigned long s)
    if (!s)
       return;                   // Duh
    debugf ("Sleeping for %d seconds, good night...", s);
-   pub (true, prefixstate, NULL, F ("0"));
+   pub (true, prefixstate, NULL, F ("0 Sleep"));
    delay (100);
    mqtt.disconnect ();
    delay (100);
