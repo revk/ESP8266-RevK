@@ -821,7 +821,7 @@ boolean ESP8266RevK::loop ()
                mqttretry = 0;
                mqttbackoff = 1000;
             }
-            if (!mqttbackup && (wifissid2 || widissid3))
+            if (!mqttbackup && (wifissid2 || wifissid3))
                WiFi.disconnect ();      // Retry at wifi level
          }
          return false;
