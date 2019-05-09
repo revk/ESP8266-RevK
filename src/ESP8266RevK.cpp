@@ -37,7 +37,7 @@ static char mychipid[7];
 
 // Some defaults
 #define	OTAHOST			"ota.revk.uk"
-#define MQTTHOST		"mqtt.revk.uk"
+#define MQTTHOST		"mqtt.iot"
 #define WIFISSID                "IoT"
 #define WIFIPASS                "security"
 
