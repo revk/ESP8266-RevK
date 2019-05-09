@@ -521,8 +521,6 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const
       wifipass = mywifipass;
    if (!mqtthost && mymqtthost)
       mqtthost = mymqtthost;
-   if (!mqtthost2 && mymqtthost)
-      mqtthost2 = mymqtthost;
    if (!hostname)
       hostname = chipid;
    // My defaults
@@ -541,8 +539,6 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const
 #ifdef MQTTHOST
    if (!mqtthost)
       mqtthost = PCPY (MQTTHOST);
-   if (!mqtthost2)
-      mqtthost2 = PCPY (MQTTHOST);
 #endif
    if (!prefixcommand)
       prefixcommand = PCPY ("command");
