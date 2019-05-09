@@ -726,8 +726,9 @@ ESP8266RevK::loop ()
                if (b < sizeof (wifibias) / sizeof (*wifibias))
                   wifibias[b]++;        // Bias against picking again
                debugf ("WiFi using [%s]", s);
-               WiFi.begin (s, p, WiFi.channel (b), WiFi.BSSID (b));
-            }
+               WiFi.begin (s, p, WiFi.channel (b), WiFi.BSSID (b));     // try this
+            } else
+               WiFi.begin (wifissid, wifipass); // Poke it? If hidden we will not have seen
             wifiscan = ((now + 10000) ? : 1);   // Again (cancels if connected)
          }
          WiFi.scanDelete ();
