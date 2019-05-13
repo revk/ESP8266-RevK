@@ -490,11 +490,63 @@ preinit ()
 ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const char *myotahost, const char *mymqtthost,
                           const char *mywifissid, const char *mywifipass)
 {
-   snprintf_P (mychipid, sizeof (mychipid), PSTR ("%06X"), ESP.getChipId ());
-   chipid = mychipid;
 #ifdef REVKDEBUG
    Serial.begin (115200);
 #endif
+   debugf("App: %s",myappname);
+   debugf("Ver: %s",myappversion);
+   snprintf_P (mychipid, sizeof (mychipid), PSTR ("%06X"), ESP.getChipId ());
+   chipid = mychipid;
+   debugf("ID: %s",chipid);
+   if (myappversion)
+      strncpy (appver, myappversion, sizeof (appver));
+   if (myappversion && strlen (myappversion) == 20 && !isdigit (*myappversion))
+   {                            // Messing with version, horrid
+      // We are assuming app version is __DATE__" "__TIME__, e.g. "May 13 2019 07:35:27"
+      int m = 0,
+         d = atoi (myappversion + 4);
+      debugf("day %d",d);
+      if (myappversion[0] == 'J')
+      {
+         if (myappversion[1] == 'a')
+            m = 1;
+	 else if (myappversion[1] == 'u')
+         {
+            if (myappversion[2] == 'n')
+               m = 6;
+            else if (myappversion[2] == 'l')
+               m = 7;
+         }
+      } else if (myappversion[0] == 'F')
+         m = 2;
+      else if (myappversion[0] == 'M')
+      {
+         if (myappversion[1] == 'a')
+         {
+            if (myappversion[2] == 'r')
+               m = 3;
+            else if (myappversion[2] == 'y')
+               m = 5;
+         }
+      } else if (myappversion[0] == 'A')
+      {
+         if (myappversion[1] == 'p')
+            m = 4;
+         else if (myappversion[1] == 'u')
+            m = 8;
+      } else if (myappversion[0] == 'S')
+         m = 9;
+      else if (myappversion[0] == 'O')
+         m = 10;
+      else if (myappversion[0] == 'N')
+         m = 11;
+      else if (myappversion[0] == 'D')
+         m = 12;
+      debugf("mon %d",m);
+      snprintf (appver, sizeof (appver), "%.4s-%02d-%02d %.8s", myappversion + 7, m, d, myappversion + 12);
+      debugf("appver %s",appver);
+      appversion = appver;
+   }
    debug ("RevK start");
    if (myappname)
    {                            // Fudge appname - Strip leading whatever / or whatever \ (windows)
@@ -507,9 +559,7 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const
       appname = myappname + i;
       appnamelen = l - i;
    }
-   appversion = myappversion;
    setlen += appnamelen + 1;
-   debugf ("RevK app name set %d", appnamelen);
    debugf ("Application start %.*s %s", appnamelen, appname, appversion);
    loadsettings ();
    // Override defaults
@@ -581,6 +631,16 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const
    if (ntphost)
       sntp_setservername (0, (char *) ntphost);
    debug ("RevK init done");
+}
+
+ESP8266RevK::ESP8266RevK (const char *myappname, const __FlashStringHelper * myappversion, const char *myotahost,
+                          const char *mymqtthost, const char *mywifissid, const char *mywifipass)
+{
+   char temp[21];
+   *temp = 0;
+   if (myappversion)
+      strncpy_P (temp, (PGM_P) myappversion, sizeof (temp));
+   ESP8266RevK (myappname, temp, myotahost, mymqtthost, mywifissid, mywifipass);
 }
 
 boolean
@@ -775,8 +835,8 @@ ESP8266RevK::loop ()
                snprintf_P (topic, sizeof (topic), PSTR ("%s/%.*s/*/#"), prefixsetting, appnamelen, appname);
                mqtt.subscribe (topic);
                mqttconnected = true;
-               pub (true, prefixstate, NULL, F ("1"));
-               pub (prefixinfo, NULL, F ("Ver %s, up %d.%03d, flash %dKiB, RSSI %d"), appversion, now / 1000, now % 1000,
+               pub (true, prefixstate, NULL, F ("1 %s"), appver);
+               pub (prefixinfo, NULL, F ("Up %d.%03d, flash %dKiB, RSSI %d"),  now / 1000, now % 1000,
                     ESP.getFlashChipRealSize () / 1024, WiFi.RSSI ());
                app_command ("connect", (const byte *) host, strlen ((char *) host));
                debugf ("MQTT connected %s", host);

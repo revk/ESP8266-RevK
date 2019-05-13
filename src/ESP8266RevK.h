@@ -86,6 +86,11 @@ class ESP8266RevK : private PubSubClient {
 		   const char *mymqtthost=NULL,
 		   const char *mywifissid=NULL,
 		   const char *mywifipass=NULL);
+   ESP8266RevK(const char*myappname="RevK",const __FlashStringHelper *myappversion=NULL,
+		   const char *myotahost=NULL,
+		   const char *mymqtthost=NULL,
+		   const char *mywifissid=NULL,
+		   const char *mywifipass=NULL);
    void  clientTLS(WiFiClientSecure&,const byte *sha1=NULL);	// Secure TLS client (LE cert if no sha1)
    // Functions return true of "OK"
    boolean loop(void);	// Call in loop, returns false if wifi not connected
@@ -116,6 +121,7 @@ class ESP8266RevK : private PubSubClient {
    boolean wificonnected=false;
    boolean mqttconnected=false;
    const char *chipid;
+   char appver[20];
  private:
 };
 
