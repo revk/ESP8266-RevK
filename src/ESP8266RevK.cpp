@@ -505,7 +505,6 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const
       // We are assuming app version is __DATE__" "__TIME__, e.g. "May 13 2019 07:35:27"
       int m = 0,
          d = atoi (myappversion + 4);
-      debugf("day %d",d);
       if (myappversion[0] == 'J')
       {
          if (myappversion[1] == 'a')
@@ -542,9 +541,7 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const
          m = 11;
       else if (myappversion[0] == 'D')
          m = 12;
-      debugf("mon %d",m);
       snprintf (appver, sizeof (appver), "%.4s-%02d-%02d %.8s", myappversion + 7, m, d, myappversion + 12);
-      debugf("appver %s",appver);
       appversion = appver;
    }
    debug ("RevK start");
