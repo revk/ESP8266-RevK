@@ -16,6 +16,11 @@ extern "C"
 #include "sntp.h"
 }
 
+//#define GRATARP	10000 // Send gratuitous ARP periodically (no, does not actually help stay on WiFi, FFS)
+#ifdef	GRATARP
+#include "lwip/etharp.h"
+#endif
+
               // Local functions
 static void myclient (WiFiClient & client);
 static void myclientTLS (WiFiClientSecure &, const byte * sha1 = NULL);
@@ -493,11 +498,11 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const
 #ifdef REVKDEBUG
    Serial.begin (115200);
 #endif
-   debugf("App: %s",myappname);
-   debugf("Ver: %s",myappversion);
+   debugf ("App: %s", myappname);
+   debugf ("Ver: %s", myappversion);
    snprintf_P (mychipid, sizeof (mychipid), PSTR ("%06X"), ESP.getChipId ());
    chipid = mychipid;
-   debugf("ID: %s",chipid);
+   debugf ("ID: %s", chipid);
    if (myappversion)
       strncpy (appver, myappversion, sizeof (appver));
    if (myappversion && strlen (myappversion) == 20 && !isdigit (*myappversion))
@@ -509,7 +514,7 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const
       {
          if (myappversion[1] == 'a')
             m = 1;
-	 else if (myappversion[1] == 'u')
+         else if (myappversion[1] == 'u')
          {
             if (myappversion[2] == 'n')
                m = 6;
@@ -661,6 +666,19 @@ ESP8266RevK::loop ()
    // Save settings
    if (settingsupdate && (int) (settingsupdate - now) < 0)
       settings_save ();
+#ifdef GRATARP
+   static long kickarp = 0;
+   if ((int) (kickarp - now) < 0)
+   {
+      kickarp = now + GRATARP;
+      netif *n = netif_list;
+      while (n)
+      {
+         etharp_gratuitous (n);
+         n = n->next;
+      }
+   }
+#endif
    // WiFi reconnect
    static long sntpbackoff = 100;
    static long sntptry = sntpbackoff;
@@ -833,7 +851,7 @@ ESP8266RevK::loop ()
                mqtt.subscribe (topic);
                mqttconnected = true;
                pub (true, prefixstate, NULL, F ("1 %s"), appver);
-               pub (prefixinfo, NULL, F ("Up %d.%03d, flash %dKiB, RSSI %d"),  now / 1000, now % 1000,
+               pub (prefixinfo, NULL, F ("Up %d.%03d, flash %dKiB, RSSI %d"), now / 1000, now % 1000,
                     ESP.getFlashChipRealSize () / 1024, WiFi.RSSI ());
                app_command ("connect", (const byte *) host, strlen ((char *) host));
                debugf ("MQTT connected %s", host);
