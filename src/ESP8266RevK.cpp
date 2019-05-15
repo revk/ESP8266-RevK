@@ -16,7 +16,7 @@ extern "C"
 #include "sntp.h"
 }
 
-//#define GRATARP	10000 // Send gratuitous ARP periodically (no, does not actually help stay on WiFi, FFS)
+//#define GRATARP       10000 // Send gratuitous ARP periodically (no, does not actually help stay on WiFi, FFS)
 #ifdef	GRATARP
 #include "lwip/etharp.h"
 #endif
@@ -45,36 +45,16 @@ static char mychipid[7];
 #define MQTTHOST		"mqtt.iot"
 #define WIFISSID                "IoT"
 #define WIFIPASS                "security"
-
-#define	revk_settings	\
-s(hostname);		\
-s(otahost);		\
-f(otasha1,20);		\
-s(wifissid);		\
-s(wifipass);		\
-s(wifissid2);		\
-s(wifipass2);		\
-s(wifissid3);		\
-s(wifipass3);		\
-s(mqtthost);		\
-s(mqtthost2);		\
-f(mqttsha1,20);		\
-s(mqttuser);		\
-s(mqttpass);		\
-s(mqttport);		\
-s(ntphost);		\
-s(prefixcommand);	\
-s(prefixsetting);	\
-s(prefixstate);		\
-s(prefixevent);		\
-s(prefixinfo);		\
-s(prefixerror);		\
+//#define       WIFISCANRATE            300
+#define	WIFISCANRATE		60      // TODO testing
 
 #define s(name) static const char *name=NULL
+#define n(name) static int name=0;
 #define f(name,len) static const byte *name=NULL
 revk_settings
 #undef 	f
 #undef 	s
+#undef n
 typedef struct setting_s setting_t;
 struct setting_s
 {
@@ -102,6 +82,141 @@ strdup_P (const char *p)
    strcpy_P ((char *) m, p);
    return m;
 }
+
+static int wificount = 0;
+static int wifibackoff = 5000;
+static const char *lastssid = NULL;
+static const char *lastpass = NULL;
+static const byte lastbssidcopy[6] = { };
+
+static volatile int wifidis = 0;
+
+static const byte *lastbssid = NULL;
+static int lastchan = 0;
+
+static WiFiEventHandler wifidisconnecthandler = NULL;
+static void
+wifidisconnect (const WiFiEventStationModeDisconnected & event)
+{                               // Event handler
+   wifidis = event.reason;
+   //debugf ("WiFi disconnect event reason %d", wifidis);
+}
+
+static uint8_t
+wifitry (const char *ssid, const char *passphrase, int32_t channel, const uint8_t * bssid)
+{                               // try a connection and confirm if it worked
+   if (wifidis)
+      debugf ("WiFi was disconnected %d", wifidis);
+   if (bssid)
+      debugf ("WiFi try %s%s %d %02X:%02X:%02X:%02X:%02X:%02X", ssid, passphrase ? "" : " (open)", channel, bssid[0], bssid[1],
+              bssid[2], bssid[3], bssid[4], bssid[5]);
+   else
+      debugf ("WiFi try %s%s %d", ssid, passphrase ? "" : " (open)", channel);
+   uint8_t status;
+   int trying = 0,
+      tries = wifibackoff;
+   trying = 0;
+   status = WiFi.status ();
+   if (status != WL_DISCONNECTED && status != WL_IDLE_STATUS)
+   {                            // Should not really happen, we should only be here if disconnected
+      debug ("WiFi force disconnect?");
+      WiFi.disconnect ();
+      delay (100);
+   }
+   wifidis = 0;
+   WiFi.begin (ssid, passphrase, channel, bssid, true);
+   while ((status = WiFi.status ()) != WL_CONNECTED && !wifidis && trying++ < tries)
+      delay (1);
+   if (status == WL_CONNECTED)
+   {
+      lastssid = ssid;
+      lastpass = passphrase;
+      lastchan = channel;
+      lastbssid = bssid;
+      if (!lastchan)
+         lastchan = WiFi.channel ();
+      if (!lastbssid)
+         lastbssid = WiFi.BSSID ();
+      if (lastbssid && lastbssid != lastbssidcopy)
+      {                         // Safe
+         memcpy ((void *) lastbssidcopy, (void *) lastbssid, 6);
+         lastbssid = lastbssidcopy;
+      }
+      debugf ("WiFi connected %d %02X:%02X:%02X:%02X:%02X:%02X", lastchan, lastbssid[0], lastbssid[1], lastbssid[2], lastbssid[3],
+              lastbssid[4], lastbssid[5]);
+      wifibackoff = 1000;
+      return status;
+   }
+   // Failed
+   if (wifibackoff < 5000)
+      wifibackoff *= 2;
+   debugf ("WiFi status %d dis %d", status, wifidis);
+   return status;
+}
+
+static boolean
+wificonnect ()
+{                               // Try and reconnect
+   wificount++;                 // Connect attempt count
+   if (lastssid && wifitry (lastssid, lastpass, lastchan, lastbssid) == WL_CONNECTED)
+      return true;              // Done using existing settings
+   if (wifissid && wifitry (wifissid, wifipass, wifichan, wifibssid) == WL_CONNECTED)
+      return true;
+   if (wifissid2 && wifitry (wifissid2, wifipass2, wifichan2, wifibssid2) == WL_CONNECTED)
+      return true;
+   if (wifissid3 && wifitry (wifissid3, wifipass3, wifichan3, wifibssid3) == WL_CONNECTED)
+      return true;
+   lastchan = 0;
+   lastbssid = NULL;
+   lastpass = NULL;
+   lastssid = NULL;
+   return false;
+}
+
+static void
+wifiscan ()
+{                               // Check for stronger signal if we are not locked to a bssid
+   static long scannext = 0;
+   if (lastbssid)
+      return;                   // Fixed BSSID
+   if (scannext && (int) (scannext - millis ()) >= 0)
+      return;                   // Waiting
+   if (scannext)
+   {                            // Start a scan
+      debug ("WiFi scan");
+      scannext = 0;
+      WiFi.scanNetworks (true, false, 0, (uint8 *) lastssid);
+      return;
+   }
+   int n = WiFi.scanComplete ();
+   if (n < 0)
+      return;
+   debugf ("WiFi scan found %d", n);
+   scannext = (millis () + WIFISCANRATE * 1000 ? : 1);  // Next scan
+   int best = -1,
+      bestrssi = 0;
+   while (n--)
+   {                            // Check for better signal
+      if (best < 0 || WiFi.RSSI (n) > bestrssi)
+      {
+         bestrssi = WiFi.RSSI (n);
+         best = n;
+      }
+   }
+   if (best >= 0)
+      debugf ("WiFi best %d", bestrssi);
+   if (best >= 0 && bestrssi > WiFi.RSSI ())
+   {                            // Switch to better wifi
+      lastchan = WiFi.channel (best);
+      memcpy ((void *) (lastbssid = lastbssidcopy), (void *) WiFi.BSSID (n), 6);
+      if (best >= 0)
+         debugf ("WiFi better %d %02X:%02X:%02X:%02X:%02X:%02X", lastchan, lastbssid[0], lastbssid[1], lastbssid[2], lastbssid[3],
+                 lastbssid[4], lastbssid[5]);
+      WiFi.disconnect ();
+   }
+   WiFi.scanDelete ();
+}
+
 
 #define PCPY(x) strdup_P(PSTR(x))
 
@@ -298,6 +413,8 @@ upgrade (int appnamelen, const char *appname)
       er = doupdate (url);      // Do again, it seems TLS can take too long for the header check, WTF, but session is cached to should work second time
    mqtt.disconnect ();
    delay (100);
+   WiFi.disconnect();
+   delay (100);
    ESP.restart ();              // Boot
    ESP.reset ();                // Boot hard (?)
    return false;                // Should not get here
@@ -307,10 +424,12 @@ const char *
 localsetting (const char *name, const byte * value, size_t len)
 {                               // Apply a local setting (return PROGMEM tag)
 #define s(n) do{const char*t=PSTR(#n);if(!strcmp_P(name,t)){n=(const char*)value;return t;}}while(0)
+#define n(n) do{const char*t=PSTR(#n);if(!strcmp_P(name,t)){n=(value?atoi((const char*)value):0);return t;}}while(0)
 #define f(n,l) do{const char*t=PSTR(#n);if(!strcmp_P(name,t)){if(len&&len!=l)return NULL;n=value;return t;}}while(0)
    revk_settings
 #undef f
 #undef s
+#undef n
       return NULL;
 }
 
@@ -567,22 +686,22 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const
    // Override defaults
    if (!otahost && myotahost)
       otahost = myotahost;
+   if (!wifissid && !wifipass && mywifipass)
+      wifipass = mywifipass;
    if (!wifissid && mywifissid)
       wifissid = mywifissid;
-   if (!wifipass && mywifipass)
-      wifipass = mywifipass;
    if (!mqtthost && mymqtthost)
       mqtthost = mymqtthost;
    if (!hostname)
       hostname = chipid;
    // My defaults
+#ifdef	WIFIPASS
+   if (!wifissid && !wifipass)
+      wifipass = PCPY (WIFIPASS);
+#endif
 #ifdef	WIFISSID
    if (!wifissid)
       wifissid = PCPY (WIFISSID);
-#endif
-#ifdef	WIFIPASS
-   if (!wifipass)
-      wifipass = PCPY (WIFIPASS);
 #endif
 #ifdef OTAHOST
    if (!otahost)
@@ -609,10 +728,9 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const
    debugf ("WiFi %s", host);
    WiFi.mode (WIFI_STA);
    wifi_station_set_hostname (host);
-   WiFi.setAutoConnect (true);  // On start
-   WiFi.setAutoReconnect (true);        // On loss
-   if (wifissid)
-      WiFi.begin (wifissid, wifipass);
+   WiFi.setAutoConnect (false); // On start
+   WiFi.setAutoReconnect (false);       // On loss (we connect)
+   wifidisconnecthandler = WiFi.onStationModeDisconnected (wifidisconnect);
    if (mqtthost)
    {
       if (mqttsha1)
@@ -632,6 +750,7 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const
    sntp_set_timezone (0);       // UTC please
    if (ntphost)
       sntp_setservername (0, (char *) ntphost);
+   WiFi.setSleepMode (WIFI_NONE_SLEEP); // We assume we have no power issues
    debug ("RevK init done");
 }
 
@@ -645,17 +764,19 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const __FlashStringHelper * mya
    ESP8266RevK (myappname, temp, myotahost, mymqtthost, mywifissid, mywifipass);
 }
 
-boolean
-ESP8266RevK::loop ()
+boolean ESP8266RevK::loop ()
 {
-   unsigned long now = millis ();       // Use with care as wraps every 49 days
+   unsigned long
+      now = millis ();          // Use with care as wraps every 49 days
    if (do_restart && (int) (do_restart - now) < 0)
    {
       settings_save ();
       pub (true, prefixstate, NULL, F ("0 Restart"));
       mqtt.disconnect ();
       delay (100);
-      ESP.reset ();
+      WiFi.disconnect();
+      delay (100);
+      ESP.restart ();
       return false;             // Uh
    }
    if (do_upgrade && (int) (do_upgrade - now) < 0)
@@ -667,11 +788,13 @@ ESP8266RevK::loop ()
    if (settingsupdate && (int) (settingsupdate - now) < 0)
       settings_save ();
 #ifdef GRATARP
-   static long kickarp = 0;
+   static long
+      kickarp = 0;
    if ((int) (kickarp - now) < 0)
    {
       kickarp = now + GRATARP;
-      netif *n = netif_list;
+      netif *
+         n = netif_list;
       while (n)
       {
          etharp_gratuitous (n);
@@ -680,134 +803,24 @@ ESP8266RevK::loop ()
    }
 #endif
    // WiFi reconnect
-   static long sntpbackoff = 100;
-   static long sntptry = sntpbackoff;
-   static long wifiscan = (wifissid ? 10000 : 1);       // Start a scan at 10 seconds
-   static int wifilast = -1;    // Last used, don't try again right away
-   static int wifibias[20] = { };
-   static boolean wifiscanned = false;
+   static long
+      sntpbackoff = 100;
+   static long
+      sntptry = sntpbackoff;
+   static int
+   wifibias[20] = { };
    if (wificonnected)
    {                            // Connected
-      if (WiFi.status () != WL_CONNECTED)
-      {
+      if (WiFi.status () != WL_CONNECTED && !(wificonnected = wificonnect ()))
          debug ("WiFi disconnected");
-         wificonnected = false;
-         //mqtt.disconnect ();
-         wifiscan = ((now + 10000) ? : 1);      // Rescan wifi if not back in 10 seconds
-      }
-   } else
-   {                            // Not connected
-      if (WiFi.status () == WL_CONNECTED)
-      {
-         debug ("WiFi connected");
-         wificonnected = true;
-         sntpbackoff = 100;
-         sntptry = now;
-         wifiscan = 0;
-         wifiscanned = false;
-      }
-   }
-   if (wifiscan)
+      else
+         wifiscan ();
+   } else if ((wificonnected = wificonnect ()))
    {
-      if ((int) (wifiscan - now) < 0)
-      {                         // Do a scan
-         wifiscan = 0;
-         if (!wificonnected)
-         {
-            debug ("WiFi scan start");
-            WiFi.scanNetworks (true, true);
-            wifiscanned = true;
-         }
-      }
-   } else if (wifiscanned)
-   {                            // Check scan done
-      int n = WiFi.scanComplete ();
-      if (n >= 0)
-      {                         // Networks found
-         wifiscanned = false;
-         debugf ("WiFi scan found %d", n);
-         if (!wifissid && !wifissid2 && !wifissid3)
-         {                      // Pick any open WiFi
-            int i,
-              v,
-              r = 0,
-               b = n;
-            static char s[33];
-            for (i = 0; i < n; i++)
-            {
-               v = WiFi.RSSI (i);
-               if (i < sizeof (wifibias) / sizeof (*wifibias))
-                  v -= wifibias[i];     // Assuming in same order but does not matter much, just creates a bias
-               const char *ssid = WiFi.SSID (i).c_str ();
-               if (*ssid && WiFi.encryptionType (i) == ENC_TYPE_NONE && (!r || v > r))
-               {                // Find strongest
-                  b = i;
-                  r = v;
-                  strncpy (s, ssid, sizeof (s));
-               }
-            }
-            if (b < n)
-            {
-               wifilast = b;
-               if (b < sizeof (wifibias) / sizeof (*wifibias))
-                  wifibias[b]++;        // Bias against picking again
-               debugf ("WiFi using any open [%s]", s);
-               WiFi.begin (s, NULL, WiFi.channel (b), WiFi.BSSID (b));
-            }
-            wifiscan = ((now + 10000) ? : 1);   // Again (cancels if connected)
-         } else if (!wificonnected)
-         {                      // Pick from configured WiFi
-            int i,
-              v,
-              r = 0,
-               b = n;
-            const char *s = NULL,
-               *p = NULL;
-            for (i = 0; i < n; i++)
-            {
-               v = WiFi.RSSI (i);
-               if (i < sizeof (wifibias) / sizeof (*wifibias))
-                  v -= wifibias[i];     // Assuming in same order but does not matter much, just creates a bias
-               const char *ssid = WiFi.SSID (i).c_str ();
-               if (*ssid && (!r || v > r))
-               {                // Stronger, consider it
-                  if (wifissid && !strcmp (wifissid, ssid)
-                      && (WiFi.encryptionType (i) == ENC_TYPE_NONE ? !wifipass : wifipass != NULL))
-                  {
-                     b = i;
-                     r = v;
-                     s = wifissid;
-                     p = wifipass;
-                  } else if (wifissid2 && !strcmp (wifissid2, ssid)
-                             && (WiFi.encryptionType (i) == ENC_TYPE_NONE ? !wifipass2 : wifipass2 != NULL))
-                  {
-                     b = i;
-                     r = v;
-                     s = wifissid2;
-                     p = wifipass2;
-                  } else if (wifissid3 && !strcmp (wifissid3, ssid)
-                             && (WiFi.encryptionType (i) == ENC_TYPE_NONE ? !wifipass3 : wifipass3 != NULL))
-                  {
-                     b = i;
-                     r = v;
-                     s = wifissid3;
-                     p = wifipass3;
-                  }
-               }
-            }
-            if (b < n)
-            {
-               wifilast = b;
-               if (b < sizeof (wifibias) / sizeof (*wifibias))
-                  wifibias[b]++;        // Bias against picking again
-               debugf ("WiFi using [%s]", s);
-               WiFi.begin (s, p, WiFi.channel (b), WiFi.BSSID (b));     // try this
-            } else
-               WiFi.begin (wifissid, wifipass); // Poke it? If hidden we will not have seen
-            wifiscan = ((now + 10000) ? : 1);   // Again (cancels if connected)
-         }
-         WiFi.scanDelete ();
-      }
+      debug ("WiFi connected");
+      wificonnected = true;
+      sntpbackoff = 100;
+      sntptry = now;
    }
    // More aggressive SNTP
    if (wificonnected && time (NULL) < 86400 && (int) (sntptry - now) < 0)
@@ -821,17 +834,24 @@ ESP8266RevK::loop ()
       sntp_init ();
    }
    // MQTT reconnnect
-   static long mqttbackoff = 100;
-   static long mqttretry = mqttbackoff;
+   static long
+      mqttbackoff = 100;
+   static long
+      mqttretry = mqttbackoff;
+   static int
+      mqttcount = 0;
    // Note, signed to allow for wrapping millis
    if (mqtthost)
    {                            // We are doing MQTT
       if (!mqtt.loop ())
       {                         // Not working
-         const char *host = mqttbackup ? mqtthost2 : mqtthost;
+         const char *
+            host = mqttbackup ? mqtthost2 : mqtthost;
          if ((!mqttretry || (int) (mqttretry - now) < 0) && wificonnected)
          {                      // Try reconnect
-            char topic[101];
+            mqttcount++;
+            char
+               topic[101];
             snprintf_P (topic, sizeof (topic), PSTR ("%s/%.*s/%s"), prefixstate, appnamelen, appname, hostname);
             if (mqtt.connect
                 (hostname, mqttbackup ? NULL : mqttuser, mqttbackup ? NULL : mqttpass, topic, MQTTQOS1, true, "0 Fail"))
@@ -851,8 +871,10 @@ ESP8266RevK::loop ()
                mqtt.subscribe (topic);
                mqttconnected = true;
                pub (true, prefixstate, NULL, F ("1 %s"), appver);
-               pub (prefixinfo, NULL, F ("Up %d.%03d, flash %dKiB, RSSI %d"), now / 1000, now % 1000,
-                    ESP.getFlashChipRealSize () / 1024, WiFi.RSSI ());
+               pub (prefixinfo, NULL, F ("Up %d.%03d, flash %dKiB, W%d M%d, WiFi %s %d %02X:%02X:%02X:%02X:%02X:%02X RSSI %d"),
+                    now / 1000, now % 1000, ESP.getFlashChipRealSize () / 1024, wificount, mqttcount,
+                    lastssid, lastchan, lastbssid[0], lastbssid[1], lastbssid[2], lastbssid[3],
+                    lastbssid[4], lastbssid[5], WiFi.RSSI ());
                app_command ("connect", (const byte *) host, strlen ((char *) host));
                debugf ("MQTT connected %s", host);
             } else
@@ -898,17 +920,20 @@ ESP8266RevK::loop ()
    return wificonnected;
 }
 
-static boolean
+static
+   boolean
 pubap (boolean retain, const __FlashStringHelper * prefix, const __FlashStringHelper * suffix,
        const __FlashStringHelper * fmt, va_list ap)
 {
    if (!mqtthost || !hostname)
       return false;             // No MQTT
-   char temp[128] = {
+   char
+      temp[128] = {
    };
    if (fmt)
       vsnprintf_P (temp, sizeof (temp), (PGM_P) fmt, ap);
-   char topic[101];
+   char
+      topic[101];
    if (suffix)
       snprintf_P (topic, sizeof (topic), PSTR ("%S/%.*s/%s/%S"), (PGM_P) prefix, appnamelen, appname, hostname, (PGM_P) suffix);
    else
@@ -916,16 +941,19 @@ pubap (boolean retain, const __FlashStringHelper * prefix, const __FlashStringHe
    return mqtt.publish (topic, temp, retain);
 }
 
-static boolean
+static
+   boolean
 pubap (boolean retain, const char *prefix, const __FlashStringHelper * suffix, const __FlashStringHelper * fmt, va_list ap)
 {
    if (!mqtthost || !hostname)
       return false;             // No MQTT
-   char temp[128] = {
+   char
+      temp[128] = {
    };
    if (fmt)
       vsnprintf_P (temp, sizeof (temp), (PGM_P) fmt, ap);
-   char topic[101];
+   char
+      topic[101];
    if (suffix)
       snprintf_P (topic, sizeof (topic), PSTR ("%s/%.*s/%s/%S"), prefix, appnamelen, appname, hostname, (PGM_P) suffix);
    else
@@ -933,16 +961,19 @@ pubap (boolean retain, const char *prefix, const __FlashStringHelper * suffix, c
    return mqtt.publish (topic, temp, retain);
 }
 
-static boolean
+static
+   boolean
 pubap (boolean retain, const char *prefix, const char *suffix, const __FlashStringHelper * fmt, va_list ap)
 {
    if (!mqtthost || !hostname)
       return false;             // No MQTT
-   char temp[128] = {
+   char
+      temp[128] = {
    };
    if (fmt)
       vsnprintf_P (temp, sizeof (temp), (PGM_P) fmt, ap);
-   char topic[101];
+   char
+      topic[101];
    if (suffix)
       snprintf_P (topic, sizeof (topic), PSTR ("%s/%.*s/%s/%s"), prefix, appnamelen, appname, hostname, suffix);
    else
@@ -950,42 +981,54 @@ pubap (boolean retain, const char *prefix, const char *suffix, const __FlashStri
    return mqtt.publish (topic, temp, retain);
 }
 
-static boolean
+static
+   boolean
 pub (const char *prefix, const char *suffix, const __FlashStringHelper * fmt, ...)
 {
-   va_list ap;
+   va_list
+      ap;
    va_start (ap, fmt);
-   boolean ret = pubap (false, prefix, suffix, fmt, ap);
+   boolean
+      ret = pubap (false, prefix, suffix, fmt, ap);
    va_end (ap);
    return ret;
 }
 
-static boolean
+static
+   boolean
 pub (boolean retain, const char *prefix, const char *suffix, const __FlashStringHelper * fmt, ...)
 {
-   va_list ap;
+   va_list
+      ap;
    va_start (ap, fmt);
-   boolean ret = pubap (retain, prefix, suffix, fmt, ap);
+   boolean
+      ret = pubap (retain, prefix, suffix, fmt, ap);
    va_end (ap);
    return ret;
 }
 
-static boolean
+static
+   boolean
 pub (const __FlashStringHelper * prefix, const __FlashStringHelper * suffix, const __FlashStringHelper * fmt, ...)
 {
-   va_list ap;
+   va_list
+      ap;
    va_start (ap, fmt);
-   boolean ret = pubap (false, prefix, suffix, fmt, ap);
+   boolean
+      ret = pubap (false, prefix, suffix, fmt, ap);
    va_end (ap);
    return ret;
 }
 
-static boolean
+static
+   boolean
 pub (boolean retain, const __FlashStringHelper * prefix, const __FlashStringHelper * suffix, const __FlashStringHelper * fmt, ...)
 {
-   va_list ap;
+   va_list
+      ap;
    va_start (ap, fmt);
-   boolean ret = pubap (retain, prefix, suffix, fmt, ap);
+   boolean
+      ret = pubap (retain, prefix, suffix, fmt, ap);
    va_end (ap);
    return ret;
 }
@@ -1201,6 +1244,8 @@ ESP8266RevK::sleep (unsigned long s)
 
 #define s(n) const char * ESP8266RevK::get_##n(){return n;}
 #define f(n,b) const byte * ESP8266RevK::get_##n(){return n;}
+#define n(n) int ESP8266RevK::get_##n(){return n;}
 revk_settings
 #undef f
+#undef n
 #undef s

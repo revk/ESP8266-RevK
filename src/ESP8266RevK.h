@@ -50,10 +50,16 @@ s(hostname);            \
 s(otahost);             \
 f(otasha1,20);          \
 s(wifissid);            \
+f(wifibssid,6);         \
+n(wifichan);            \
 s(wifipass);            \
 s(wifissid2);           \
+f(wifibssid2,6);                \
+n(wifichan2);           \
 s(wifipass2);           \
 s(wifissid3);           \
+f(wifibssid3,6);        \
+n(wifichan3);           \
 s(wifipass3);           \
 s(mqtthost);            \
 s(mqtthost2);           \
@@ -112,10 +118,12 @@ class ESP8266RevK : private PubSubClient {
    boolean restart(int delay=0);	// Save settings and restart
    void sleep(unsigned long s);	// Got to sleep
 
-#define s(n) const char *get_##n() // return setting
+#define s(n) const char *get_##n(); // return setting
 #define f(n,b) const byte *get_##n(); // return setting
+#define n(n) int get_##n(); // return setting
    revk_settings
 #undef s
+#undef n
 #undef f
 
    boolean wificonnected=false;
