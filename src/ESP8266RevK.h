@@ -1,4 +1,7 @@
 // RevK platform
+
+//#define REVKDEBUG               // If defined, does serial debug at 74880
+
 // This is a set of functions used in a number of projects by me, and a few friends
 // It sets up WiFi, and ensures reconnect
 // It sets ip MQTT, and ensures reconnect
@@ -32,7 +35,6 @@
 // restart	Do a restart (saving settings first)
 //
 
-//#define REVKDEBUG               // If defined, does serial debug at 74880
 
 #ifdef REVKDEBUG
 #define debugf(fmt,...) do{Serial.printf_P(PSTR(fmt "\n"),__VA_ARGS__);Serial.flush();}while(0)
@@ -49,17 +51,18 @@
 s(hostname);            \
 s(otahost);             \
 f(otasha1,20);          \
+n(wifireset,300);	\
 s(wifissid);            \
 f(wifibssid,6);         \
-n(wifichan);            \
+n(wifichan,0);          \
 s(wifipass);            \
 s(wifissid2);           \
-f(wifibssid2,6);                \
-n(wifichan2);           \
+f(wifibssid2,6);        \
+n(wifichan2,0);         \
 s(wifipass2);           \
 s(wifissid3);           \
 f(wifibssid3,6);        \
-n(wifichan3);           \
+n(wifichan3,0);         \
 s(wifipass3);           \
 s(mqtthost);            \
 s(mqtthost2);           \
@@ -120,7 +123,7 @@ class ESP8266RevK : private PubSubClient {
 
 #define s(n) const char *get_##n(); // return setting
 #define f(n,b) const byte *get_##n(); // return setting
-#define n(n) int get_##n(); // return setting
+#define n(n,d) int get_##n(); // return setting
    revk_settings
 #undef s
 #undef n
