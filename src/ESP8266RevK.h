@@ -1,6 +1,7 @@
 // RevK platform
 
 //#define REVKDEBUG               // If defined, does serial debug at 74880
+//#define REVK242	// Using 2.4.2 - does not link, WTF
 
 // This is a set of functions used in a number of projects by me, and a few friends
 // It sets up WiFi, and ensures reconnect
@@ -35,7 +36,6 @@
 // restart	Do a restart (saving settings first)
 //
 
-
 #ifdef REVKDEBUG
 #define debugf(fmt,...) do{Serial.printf_P(PSTR(fmt "\n"),__VA_ARGS__);Serial.flush();}while(0)
 #define debug(str) do{Serial.printf(PSTR("%S\n"),PSTR(str));Serial.flush();}while(0)
@@ -64,6 +64,7 @@ s(wifissid3);           \
 f(wifibssid3,6);        \
 n(wifichan3,0);         \
 s(wifipass3);           \
+n(mqttreset,0);		\
 s(mqtthost);            \
 s(mqtthost2);           \
 f(mqttsha1,20);         \
