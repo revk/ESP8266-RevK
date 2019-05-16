@@ -106,12 +106,16 @@ class ESP8266RevK : private PubSubClient {
    boolean loop(void);	// Call in loop, returns false if wifi not connected
    boolean state(const __FlashStringHelper *tag, const __FlashStringHelper *fmt=NULL, ...); // Publish stat
    boolean state(const char *tag, const __FlashStringHelper *fmt=NULL, ...); // Publish stat
+   boolean state(const __FlashStringHelper *tag, unsigned int len, const byte *data);
    boolean event(const __FlashStringHelper *tag, const __FlashStringHelper *fmt=NULL, ...); // Publish tele
    boolean event(const char *tag, const __FlashStringHelper *fmt=NULL, ...); // Publish tele
+   boolean event(const __FlashStringHelper *tag, unsigned int len, const byte *data);
    boolean error(const __FlashStringHelper *tag, const __FlashStringHelper *fmt=NULL, ...); // Publish error
    boolean error(const char *tag, const __FlashStringHelper *fmt=NULL, ...); // Publish error
+   boolean error(const __FlashStringHelper *tag, unsigned int len, const byte *data);
    boolean info(const __FlashStringHelper *tag, const __FlashStringHelper *fmt=NULL, ...); // Publish error
    boolean info(const char *tag, const __FlashStringHelper *fmt=NULL, ...); // Publish error
+   boolean info(const __FlashStringHelper *tag, unsigned int len, const byte *data);
    boolean pub (const char * prefix, const char * suffix, const __FlashStringHelper * fmt, ...); // Publish general
    boolean pub(const __FlashStringHelper *prefix, const __FlashStringHelper *tag, const __FlashStringHelper *fmt=NULL, ...);	// Publish general
    boolean pub(boolean retain, const __FlashStringHelper *prefix, const __FlashStringHelper *tag,  const __FlashStringHelper *fmt=NULL, ...);	// Publish general (with retain)

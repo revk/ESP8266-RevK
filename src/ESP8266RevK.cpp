@@ -355,7 +355,7 @@ doupdate (char *url)
    if (otasha1)
    {
 #ifdef REVK242
-      ok = ESPhttpUpdate.update (String (otahost), 443, String (url), String(),otasha1);
+      ok = ESPhttpUpdate.update (String (otahost), 443, String (url), String (), otasha1);
 #else
       WiFiClientSecure client;
       myclientTLS (client, otasha1);
@@ -836,6 +836,11 @@ ESP8266RevK::loop ()
       wifiok = now;
    if (wifireset && !do_restart && (int) (now - wifiok) > wifireset * 1000)
       do_restart = now;         // No wifi, restart
+   static long mqttok = 0;
+   if (mqttconnected)
+      mqttok = now;
+   if (mqttreset && !do_restart && (int) (now - mqttok) > mqttreset * 1000)
+      do_restart = now;         // No mqtt, restart
 #ifndef	REVK242
    // More aggressive SNTP
    if (wificonnected && time (NULL) < 86400 && (int) (sntptry - now) <= 0)
@@ -929,11 +934,6 @@ ESP8266RevK::loop ()
          }
       }
    }
-   static long mqttok = 0;
-   if (mqttconnected)
-      mqttok = now;
-   if (mqttreset && !do_restart && (int) (now - mqttok) > mqttreset * 1000)
-      do_restart = now;         // No mqtt, restart
 #ifdef	REVKDEBUG
    static long ticker = 0;
    if ((int) (ticker - now) <= 0)
@@ -953,7 +953,7 @@ pubap (boolean retain, const __FlashStringHelper * prefix, const __FlashStringHe
 {
    if (!mqtthost || !hostname)
       return false;             // No MQTT
-   char temp[128] = {
+   char temp[200] = {
    };
    if (fmt)
       vsnprintf_P (temp, sizeof (temp), (PGM_P) fmt, ap);
@@ -970,7 +970,7 @@ pubap (boolean retain, const char *prefix, const __FlashStringHelper * suffix, c
 {
    if (!mqtthost || !hostname)
       return false;             // No MQTT
-   char temp[128] = {
+   char temp[200] = {
    };
    if (fmt)
       vsnprintf_P (temp, sizeof (temp), (PGM_P) fmt, ap);
@@ -987,7 +987,7 @@ pubap (boolean retain, const char *prefix, const char *suffix, const __FlashStri
 {
    if (!mqtthost || !hostname)
       return false;             // No MQTT
-   char temp[128] = {
+   char temp[200] = {
    };
    if (fmt)
       vsnprintf_P (temp, sizeof (temp), (PGM_P) fmt, ap);
@@ -997,6 +997,19 @@ pubap (boolean retain, const char *prefix, const char *suffix, const __FlashStri
    else
       snprintf_P (topic, sizeof (topic), PSTR ("%s/%.*s/%s"), prefix, appnamelen, appname, hostname);
    return mqtt.publish (topic, temp, retain);
+}
+
+static boolean
+pubap (boolean retain, const char * prefix, const __FlashStringHelper *suffix, unsigned int len, const byte * data)
+{
+   if (!mqtthost || !hostname)
+      return false;             // No MQTT
+   char topic[101];
+   if (suffix)
+      snprintf_P (topic, sizeof (topic), PSTR ("%s/%.*s/%s/%s"), prefix, appnamelen, appname, hostname, suffix);
+   else
+      snprintf_P (topic, sizeof (topic), PSTR ("%s/%.*s/%s"), prefix, appnamelen, appname, hostname);
+   return mqtt.publish (topic, data, len, retain);
 }
 
 static boolean
@@ -1060,6 +1073,12 @@ ESP8266RevK::state (const char *suffix, const __FlashStringHelper * fmt, ...)
 }
 
 boolean
+ESP8266RevK::state (const __FlashStringHelper * suffix, unsigned int len, const byte * data)
+{
+   return pubap (true, prefixstate, suffix, len, data);
+}
+
+boolean
 ESP8266RevK::event (const __FlashStringHelper * suffix, const __FlashStringHelper * fmt, ...)
 {
    va_list ap;
@@ -1077,6 +1096,12 @@ ESP8266RevK::event (const char *suffix, const __FlashStringHelper * fmt, ...)
    boolean ret = pubap (false, prefixevent, suffix, fmt, ap);
    va_end (ap);
    return ret;
+}
+
+boolean
+ESP8266RevK::event (const __FlashStringHelper * suffix, unsigned int len, const byte * data)
+{
+   return pubap (false, prefixevent, suffix, len, data);
 }
 
 boolean
@@ -1100,6 +1125,12 @@ ESP8266RevK::info (const char *suffix, const __FlashStringHelper * fmt, ...)
 }
 
 boolean
+ESP8266RevK::info (const __FlashStringHelper * suffix, unsigned int len, const byte * data)
+{
+   return pubap (false, prefixinfo, suffix, len, data);
+}
+
+boolean
 ESP8266RevK::error (const __FlashStringHelper * suffix, const __FlashStringHelper * fmt, ...)
 {
    va_list ap;
@@ -1116,6 +1147,13 @@ ESP8266RevK::error (const char *suffix, const __FlashStringHelper * fmt, ...)
    va_start (ap, fmt);
    boolean ret = pubap (false, prefixerror, suffix, fmt, ap);
    va_end (ap);
+   return ret;
+}
+
+boolean
+ESP8266RevK::error (const __FlashStringHelper * suffix, unsigned int len, const byte * data)
+{
+   boolean ret = pubap (false, prefixerror, suffix, len, data);
    return ret;
 }
 
