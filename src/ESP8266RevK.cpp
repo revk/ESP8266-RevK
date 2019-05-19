@@ -10,7 +10,6 @@
 
 #include <ESP8266httpUpdate.h>
 #include <EEPROM.h>
-#include "lecert.h"
 extern "C"
 {
 #include "sntp.h"
@@ -69,10 +68,13 @@ static unsigned int setlen = sizeof (eepromsig) + 1;
 static long settingsupdate = 0; // When to do a settings update (delay after settings changed, 0 if no change)
 
       // Local variables
-static WiFiClientSecure mqttclientsecure;
-static WiFiClient mqttclient;
-static PubSubClient mqtt;
-static boolean mqttbackup = false;
+WiFiClient mqttclient;
+WiFiClientSecure mqttclientsecure;
+PubSubClient mqtt;
+boolean mqttbackup = false;
+long mqttbackoff = 100;
+long mqttretry = mqttbackoff;
+int mqttcount = 0;
 
 static const char *
 strdup_P (const char *p)
@@ -347,29 +349,21 @@ static int
 doupdate (char *url)
 {
    int ret = 0;
-   pub (true, prefixstate, NULL, F ("0 OTA http://%s%s"), otahost, url);
+   pub (true, prefixstate, NULL, F ("0 OTA https://%s%s"), otahost, url);
    delay (100);
    mqtt.disconnect ();
    delay (100);
    int ok = 0;
    if (otasha1)
    {
-#ifdef REVK242
-      ok = ESPhttpUpdate.update (String (otahost), 443, String (url), String (), otasha1);
-#else
       WiFiClientSecure client;
       myclientTLS (client, otasha1);
       ok = ESPhttpUpdate.update (client, String (otahost), 443, String (url));
-#endif
    } else
    {
-#ifdef REVK242
-      ok = ESPhttpUpdate.update (String (otahost), 80, String (url));
-#else
       WiFiClientSecure client;
       myclientTLS (client);
       ok = ESPhttpUpdate.update (client, String (otahost), 443, String (url));
-#endif
    }
    mqtt.connect (hostname, mqttbackup ? NULL : mqttuser, mqttbackup ? NULL : mqttpass);
    if (ok)
@@ -509,19 +503,23 @@ setting_apply (const char *tag, const byte * value, size_t len)
       ((char *) val)[len] = 0;
       news->len = len;
    }
-   debugf ("Apply %s %.*s (%d)", tag, len, val, len);
    const char *newtag = NULL;
    // Existing setting
    setting_t **ss = &set;
    while (*ss && strcmp_P (tag, (*ss)->tag))
       ss = &(*ss)->next;
    if (!*ss && !news)
-      return true;              // No new value and no existing value
-   if (*ss && news && (*ss)->len == len && !memcmp ((*ss)->value, val, len))
    {
+      debugf ("Non setting %s", tag);
+      return true;              // No new value and no existing value
+   }
+   if (*ss && news && (*ss)->len == len && !memcmp ((*ss)->value, val, len))
+   {                            // Same
+      debugf ("Unchanged %s %.*s (%d)", tag, len, val, len);
       free (news);
       return true;              // Value has not changed
    }
+   debugf ("Apply %s %.*s (%d)", tag, len, val, len);
    unsigned int newlen = setlen;
    if (*ss)
       newlen -= strlen (tag) + 1 + (*ss)->len + 1;
@@ -739,26 +737,11 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const
    WiFi.setAutoConnect (false); // On start
    WiFi.setAutoReconnect (false);       // On loss (we connect)
    wifidisconnecthandler = WiFi.onStationModeDisconnected (wifidisconnect);
-   if (mqtthost)
-   {
-      if (mqttsha1)
-      {
-         debugf ("MQTT secure %s", mqtthost);
-         myclientTLS (mqttclientsecure, mqttsha1);
-         mqtt.setClient (mqttclientsecure);
-      } else
-      {
-         debugf ("MQTT insecure %s", mqtthost);
-         myclient (mqttclient);
-         mqtt.setClient (mqttclient);
-      }
-      mqtt.setCallback (message);
-      mqtt.setServer (mqtthost, mqttport ? atoi (mqttport) : mqttsha1 ? 8883 : 1883);
-   }
    sntp_set_timezone (0);       // UTC please
    if (ntphost)
       sntp_setservername (0, (char *) ntphost);
    WiFi.setSleepMode (WIFI_NONE_SLEEP); // We assume we have no power issues
+   mqtt.setCallback (message);
    debug ("RevK init done");
 }
 
@@ -841,7 +824,6 @@ ESP8266RevK::loop ()
       mqttok = now;
    if (mqttreset && !do_restart && (int) (now - mqttok) > mqttreset * 1000)
       do_restart = now;         // No mqtt, restart
-#ifndef	REVK242
    // More aggressive SNTP
    if (wificonnected && time (NULL) < 86400 && (int) (sntptry - now) <= 0)
    {
@@ -853,12 +835,7 @@ ESP8266RevK::loop ()
       sntp_stop ();
       sntp_init ();
    }
-#endif
    // MQTT reconnnect
-   static long mqttbackoff = 100;
-   static long mqttretry = mqttbackoff;
-   static int mqttcount = 0;
-   // Note, signed to allow for wrapping millis
    if (mqtthost)
    {                            // We are doing MQTT
       if (!mqtt.loop ())
@@ -867,6 +844,28 @@ ESP8266RevK::loop ()
          if ((!mqttretry || (int) (mqttretry - now) <= 0) && wificonnected)
          {                      // Try reconnect
             mqttcount++;
+            if (mqttbackup)
+            {
+               debugf ("MQTT backup insecure %s", mqtthost2);
+               myclient (mqttclient);
+               mqtt.setClient (mqttclient);
+               mqtt.setServer (mqtthost2, 1883);
+            } else
+            {
+               if (mqttsha1)
+               {
+                  debugf ("MQTT main secure %s", mqtthost);
+                  myclientTLS (mqttclientsecure, mqttsha1);
+                  mqtt.setClient (mqttclientsecure);
+                  mqtt.setServer (mqtthost, mqttport ? atoi (mqttport) : 8883);
+               } else
+               {
+                  debugf ("MQTT main insecure %s", mqtthost);
+                  myclient (mqttclient);
+                  mqtt.setClient (mqttclient);
+                  mqtt.setServer (mqtthost, mqttport ? atoi (mqttport) : 1883);
+               }
+            }
             char topic[101];
             snprintf_P (topic, sizeof (topic), PSTR ("%s/%.*s/%s"), prefixstate, appnamelen, appname, hostname);
             if (mqtt.connect
@@ -910,13 +909,7 @@ ESP8266RevK::loop ()
                {
                   if (mqtthost2 && (mqttsha1 || strcmp (mqtthost, mqtthost2)))
                   {
-                     debug ("MQTT swap");
                      mqttbackup = !mqttbackup;
-                     myclient (mqttclient);
-                     if (mqttbackup)
-                        mqtt.setServer (mqtthost2, 1883);
-                     else
-                        mqtt.setServer (mqtthost, mqttport ? atoi (mqttport) : mqttsha1 ? 8883 : 1883);
                      mqttretry = 0;
                      mqttbackoff = 1000;
                   }
@@ -1000,7 +993,7 @@ pubap (boolean retain, const char *prefix, const char *suffix, const __FlashStri
 }
 
 static boolean
-pubap (boolean retain, const char * prefix, const __FlashStringHelper *suffix, unsigned int len, const byte * data)
+pubap (boolean retain, const char *prefix, const __FlashStringHelper * suffix, unsigned int len, const byte * data)
 {
    if (!mqtthost || !hostname)
       return false;             // No MQTT
@@ -1238,20 +1231,16 @@ myclient (WiFiClient & client)
 {
 }
 
+#include "lecert.h"
 static void
 myclientTLS (WiFiClientSecure & client, const byte * sha1)
 {
-#ifndef REVK242
    if (sha1)
       client.setFingerprint (sha1);
    else
-   {
-      unsigned char tls_ca_cert[] = TLS_CA_CERT;
-      client.setCACert (tls_ca_cert, TLS_CA_CERT_LENGTH);
-   }
+      client.setCACert_P (LECert, sizeof (LECert));
    static BearSSL::Session sess;
    client.setSession (&sess);
-#endif
 }
 
 void
@@ -1276,6 +1265,31 @@ ESP8266RevK::sleep (unsigned long s)
    debug ("WTF");
    // Goes back to reset at this point - connect GPIO16 to RST
 }
+
+void
+ESP8266RevK::mqttclose (const __FlashStringHelper * reason)
+{
+   if (!mqttconnected)
+      return;
+   if (reason)
+      pub (true, prefixstate, NULL, F ("0 %S"), reason);
+   else
+      pub (true, prefixstate, NULL, F ("0"));
+   delay (100);
+   mqtt.disconnect ();
+   delay (100);
+   mqttconnected = false;
+   mqttretry = 0;
+}
+
+void
+ESP8266RevK::mqttcloseTLS (const __FlashStringHelper * reason)
+{
+   if (!mqttconnected || mqttbackup || !mqttsha1)
+      return;
+   mqttclose (reason);
+}
+
 
 #define s(n) const char * ESP8266RevK::get_##n(){return n;}
 #define f(n,b) const byte * ESP8266RevK::get_##n(){return n;}

@@ -1,7 +1,6 @@
 // RevK platform
 
 //#define REVKDEBUG               // If defined, does serial debug at 74880
-//#define REVK242	// Using 2.4.2 - does not link, WTF
 
 // This is a set of functions used in a number of projects by me, and a few friends
 // It sets up WiFi, and ensures reconnect
@@ -125,6 +124,8 @@ class ESP8266RevK : private PubSubClient {
    boolean ota(int delay=0);	// Do upgrade
    boolean restart(int delay=0);	// Save settings and restart
    void sleep(unsigned long s);	// Got to sleep
+   void mqttclose(const __FlashStringHelper *reason=NULL); // Close (will reopen on next loop)
+   void mqttcloseTLS(const __FlashStringHelper *reason=NULL); // Close if TLS
 
 #define s(n) const char *get_##n(); // return setting
 #define f(n,b) const byte *get_##n(); // return setting
