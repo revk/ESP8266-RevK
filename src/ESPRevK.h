@@ -1,6 +1,6 @@
 // RevK platform
 
-#define REVKDEBUG               // If defined, does serial debug at 74880
+//#define REVKDEBUG               // If defined, does serial debug at 74880
 
 // This is a set of functions used in a number of projects by me, and a few friends
 // It sets up WiFi, and ensures reconnect
