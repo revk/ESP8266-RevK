@@ -1,6 +1,6 @@
 // See include file for more details
 
-#include <ESP8266RevK.h>
+#include <ESPRevK.h>
 
 #ifdef ARDUINO_ESP8266_NODEMCU
 #define BOARD "nodemcu"
@@ -406,6 +406,7 @@ upgrade (int appnamelen, const char *appname)
       url[p] = 0;
    }
    ESPhttpUpdate.rebootOnUpdate (false);
+   debugf ("OTA %s", url);
    int er = doupdate (url);
    if (er == HTTP_UE_TOO_LESS_SPACE)
    {                            // try smaller which should then be able to load the real code.
@@ -617,7 +618,7 @@ preinit ()
 #endif
 }
 
-ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const char *myotahost, const char *mymqtthost,
+ESPRevK::ESPRevK (const char *myappname, const char *myappversion, const char *myotahost, const char *mymqtthost,
                           const char *mywifissid, const char *mywifipass)
 {
 #ifdef REVKDEBUG
@@ -745,18 +746,18 @@ ESP8266RevK::ESP8266RevK (const char *myappname, const char *myappversion, const
    debug ("RevK init done");
 }
 
-ESP8266RevK::ESP8266RevK (const char *myappname, const __FlashStringHelper * myappversion, const char *myotahost,
+ESPRevK::ESPRevK (const char *myappname, const __FlashStringHelper * myappversion, const char *myotahost,
                           const char *mymqtthost, const char *mywifissid, const char *mywifipass)
 {
    char temp[21];
    *temp = 0;
    if (myappversion)
       strncpy_P (temp, (PGM_P) myappversion, sizeof (temp));
-   ESP8266RevK (myappname, temp, myotahost, mymqtthost, mywifissid, mywifipass);
+   ESPRevK (myappname, temp, myotahost, mymqtthost, mywifissid, mywifipass);
 }
 
 boolean
-ESP8266RevK::loop ()
+ESPRevK::loop ()
 {
    unsigned long now = (millis ()? : 1);        // Use with care as wraps every 49 days
    if (do_restart && (int) (do_restart - now) <= 0)
@@ -931,7 +932,7 @@ ESP8266RevK::loop ()
    static long ticker = 0;
    if ((int) (ticker - now) <= 0)
    {
-      ticker = (now + 1000) / 1000 * 1000;
+      ticker = (now + 10000) / 10000 * 10000;
       //debug ("Tick");
       debugf ("Now=%d W%d%S%S", now, wifidiscause, wificonnected ? PSTR (" WiFi") : PSTR (""),
               mqttconnected ? PSTR (" MQTT") : PSTR (""));
@@ -1046,7 +1047,7 @@ pub (boolean retain, const __FlashStringHelper * prefix, const __FlashStringHelp
 }
 
 boolean
-ESP8266RevK::state (const __FlashStringHelper * suffix, const __FlashStringHelper * fmt, ...)
+ESPRevK::state (const __FlashStringHelper * suffix, const __FlashStringHelper * fmt, ...)
 {
    va_list ap;
    va_start (ap, fmt);
@@ -1056,7 +1057,7 @@ ESP8266RevK::state (const __FlashStringHelper * suffix, const __FlashStringHelpe
 }
 
 boolean
-ESP8266RevK::state (const char *suffix, const __FlashStringHelper * fmt, ...)
+ESPRevK::state (const char *suffix, const __FlashStringHelper * fmt, ...)
 {
    va_list ap;
    va_start (ap, fmt);
@@ -1066,13 +1067,13 @@ ESP8266RevK::state (const char *suffix, const __FlashStringHelper * fmt, ...)
 }
 
 boolean
-ESP8266RevK::state (const __FlashStringHelper * suffix, unsigned int len, const byte * data)
+ESPRevK::state (const __FlashStringHelper * suffix, unsigned int len, const byte * data)
 {
    return pubap (true, prefixstate, suffix, len, data);
 }
 
 boolean
-ESP8266RevK::event (const __FlashStringHelper * suffix, const __FlashStringHelper * fmt, ...)
+ESPRevK::event (const __FlashStringHelper * suffix, const __FlashStringHelper * fmt, ...)
 {
    va_list ap;
    va_start (ap, fmt);
@@ -1082,7 +1083,7 @@ ESP8266RevK::event (const __FlashStringHelper * suffix, const __FlashStringHelpe
 }
 
 boolean
-ESP8266RevK::event (const char *suffix, const __FlashStringHelper * fmt, ...)
+ESPRevK::event (const char *suffix, const __FlashStringHelper * fmt, ...)
 {
    va_list ap;
    va_start (ap, fmt);
@@ -1092,13 +1093,13 @@ ESP8266RevK::event (const char *suffix, const __FlashStringHelper * fmt, ...)
 }
 
 boolean
-ESP8266RevK::event (const __FlashStringHelper * suffix, unsigned int len, const byte * data)
+ESPRevK::event (const __FlashStringHelper * suffix, unsigned int len, const byte * data)
 {
    return pubap (false, prefixevent, suffix, len, data);
 }
 
 boolean
-ESP8266RevK::info (const __FlashStringHelper * suffix, const __FlashStringHelper * fmt, ...)
+ESPRevK::info (const __FlashStringHelper * suffix, const __FlashStringHelper * fmt, ...)
 {
    va_list ap;
    va_start (ap, fmt);
@@ -1108,7 +1109,7 @@ ESP8266RevK::info (const __FlashStringHelper * suffix, const __FlashStringHelper
 }
 
 boolean
-ESP8266RevK::info (const char *suffix, const __FlashStringHelper * fmt, ...)
+ESPRevK::info (const char *suffix, const __FlashStringHelper * fmt, ...)
 {
    va_list ap;
    va_start (ap, fmt);
@@ -1118,13 +1119,13 @@ ESP8266RevK::info (const char *suffix, const __FlashStringHelper * fmt, ...)
 }
 
 boolean
-ESP8266RevK::info (const __FlashStringHelper * suffix, unsigned int len, const byte * data)
+ESPRevK::info (const __FlashStringHelper * suffix, unsigned int len, const byte * data)
 {
    return pubap (false, prefixinfo, suffix, len, data);
 }
 
 boolean
-ESP8266RevK::error (const __FlashStringHelper * suffix, const __FlashStringHelper * fmt, ...)
+ESPRevK::error (const __FlashStringHelper * suffix, const __FlashStringHelper * fmt, ...)
 {
    va_list ap;
    va_start (ap, fmt);
@@ -1134,7 +1135,7 @@ ESP8266RevK::error (const __FlashStringHelper * suffix, const __FlashStringHelpe
 }
 
 boolean
-ESP8266RevK::error (const char *suffix, const __FlashStringHelper * fmt, ...)
+ESPRevK::error (const char *suffix, const __FlashStringHelper * fmt, ...)
 {
    va_list ap;
    va_start (ap, fmt);
@@ -1144,14 +1145,14 @@ ESP8266RevK::error (const char *suffix, const __FlashStringHelper * fmt, ...)
 }
 
 boolean
-ESP8266RevK::error (const __FlashStringHelper * suffix, unsigned int len, const byte * data)
+ESPRevK::error (const __FlashStringHelper * suffix, unsigned int len, const byte * data)
 {
    boolean ret = pubap (false, prefixerror, suffix, len, data);
    return ret;
 }
 
 boolean
-ESP8266RevK::pub (const char *prefix, const char *suffix, const __FlashStringHelper * fmt, ...)
+ESPRevK::pub (const char *prefix, const char *suffix, const __FlashStringHelper * fmt, ...)
 {
    va_list ap;
    va_start (ap, fmt);
@@ -1161,7 +1162,7 @@ ESP8266RevK::pub (const char *prefix, const char *suffix, const __FlashStringHel
 }
 
 boolean
-   ESP8266RevK::pub (const __FlashStringHelper * prefix, const __FlashStringHelper * suffix, const __FlashStringHelper * fmt, ...)
+   ESPRevK::pub (const __FlashStringHelper * prefix, const __FlashStringHelper * suffix, const __FlashStringHelper * fmt, ...)
 {
    va_list ap;
    va_start (ap, fmt);
@@ -1171,7 +1172,7 @@ boolean
 }
 
 boolean
-ESP8266RevK::pub (boolean retain, const char *prefix, const char *suffix, const __FlashStringHelper * fmt, ...)
+ESPRevK::pub (boolean retain, const char *prefix, const char *suffix, const __FlashStringHelper * fmt, ...)
 {
    va_list ap;
    va_start (ap, fmt);
@@ -1181,7 +1182,7 @@ ESP8266RevK::pub (boolean retain, const char *prefix, const char *suffix, const 
 }
 
 boolean
-   ESP8266RevK::pub (boolean retain, const __FlashStringHelper * prefix, const __FlashStringHelper * suffix,
+   ESPRevK::pub (boolean retain, const __FlashStringHelper * prefix, const __FlashStringHelper * suffix,
                      const __FlashStringHelper * fmt, ...)
 {
    va_list ap;
@@ -1192,7 +1193,7 @@ boolean
 }
 
 boolean
-ESP8266RevK::setting (const __FlashStringHelper * tag, const char *value)
+ESPRevK::setting (const __FlashStringHelper * tag, const char *value)
 {
    char temp[50];
    strncpy_P (temp, (PGM_P) tag, sizeof (temp));
@@ -1200,7 +1201,7 @@ ESP8266RevK::setting (const __FlashStringHelper * tag, const char *value)
 }
 
 boolean
-ESP8266RevK::setting (const __FlashStringHelper * tag, const byte * value, size_t len)
+ESPRevK::setting (const __FlashStringHelper * tag, const byte * value, size_t len)
 {
    // Set a setting
    char temp[50];
@@ -1209,7 +1210,7 @@ ESP8266RevK::setting (const __FlashStringHelper * tag, const byte * value, size_
 }
 
 boolean
-ESP8266RevK::ota (int delay)
+ESPRevK::ota (int delay)
 {
    if (delay < 0)
       do_upgrade = 0;
@@ -1218,7 +1219,7 @@ ESP8266RevK::ota (int delay)
 }
 
 boolean
-ESP8266RevK::restart (int delay)
+ESPRevK::restart (int delay)
 {
    if (delay < 0)
       do_restart = 0;
@@ -1244,13 +1245,13 @@ myclientTLS (WiFiClientSecure & client, const byte * sha1)
 }
 
 void
-ESP8266RevK::clientTLS (WiFiClientSecure & client, const byte * sha1)
+ESPRevK::clientTLS (WiFiClientSecure & client, const byte * sha1)
 {
    return myclientTLS (client, sha1);
 }
 
 void
-ESP8266RevK::sleep (unsigned long s)
+ESPRevK::sleep (unsigned long s)
 {                               // Total sleep for a while
    if (!s)
       return;                   // Duh
@@ -1267,7 +1268,7 @@ ESP8266RevK::sleep (unsigned long s)
 }
 
 void
-ESP8266RevK::mqttclose (const __FlashStringHelper * reason)
+ESPRevK::mqttclose (const __FlashStringHelper * reason)
 {
    if (!mqttconnected)
       return;
@@ -1283,7 +1284,7 @@ ESP8266RevK::mqttclose (const __FlashStringHelper * reason)
 }
 
 void
-ESP8266RevK::mqttcloseTLS (const __FlashStringHelper * reason)
+ESPRevK::mqttcloseTLS (const __FlashStringHelper * reason)
 {
    if (!mqttconnected || mqttbackup || !mqttsha1)
       return;
@@ -1291,9 +1292,9 @@ ESP8266RevK::mqttcloseTLS (const __FlashStringHelper * reason)
 }
 
 
-#define s(n) const char * ESP8266RevK::get_##n(){return n;}
-#define f(n,b) const byte * ESP8266RevK::get_##n(){return n;}
-#define n(n,d) int ESP8266RevK::get_##n(){return n;}
+#define s(n) const char * ESPRevK::get_##n(){return n;}
+#define f(n,b) const byte * ESPRevK::get_##n(){return n;}
+#define n(n,d) int ESPRevK::get_##n(){return n;}
 revk_settings
 #undef f
 #undef n

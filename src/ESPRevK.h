@@ -1,6 +1,6 @@
 // RevK platform
 
-//#define REVKDEBUG               // If defined, does serial debug at 74880
+#define REVKDEBUG               // If defined, does serial debug at 74880
 
 // This is a set of functions used in a number of projects by me, and a few friends
 // It sets up WiFi, and ensures reconnect
@@ -43,8 +43,8 @@
 #define debug(...) do{}while(0)
 #endif
 
-#ifndef ESP8266RevK_H
-#define ESP8266RevK_H
+#ifndef ESPRevK_H
+#define ESPRevK_H
 
 #define revk_settings   \
 s(hostname);            \
@@ -88,14 +88,15 @@ const char * app_setting(const char *tag,const byte *value,size_t len);	// Calle
 // value is NULL, or malloc'd with NULL added and not freed until next app setting with same tag
 // Return is PROGMEM pointer to the setting name if setting is accepted, or NULL if not accepted
 
-class ESP8266RevK : private PubSubClient {
+class ESPRevK 
+{
  public:
-   ESP8266RevK(const char*myappname="RevK",const char *myappversion=NULL,
+   ESPRevK(const char*myappname="RevK",const char *myappversion=NULL,
 		   const char *myotahost=NULL,
 		   const char *mymqtthost=NULL,
 		   const char *mywifissid=NULL,
 		   const char *mywifipass=NULL);
-   ESP8266RevK(const char*myappname="RevK",const __FlashStringHelper *myappversion=NULL,
+   ESPRevK(const char*myappname="RevK",const __FlashStringHelper *myappversion=NULL,
 		   const char *myotahost=NULL,
 		   const char *mymqtthost=NULL,
 		   const char *mywifissid=NULL,
