@@ -1,7 +1,7 @@
 #ifndef __PN532RevK_H__
 #define __PN532RevK_H__
 
-#include <PN532RevK.h>
+#include <PN532Interface.h>
 
 class PN532RevK
 {
