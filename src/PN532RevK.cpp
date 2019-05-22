@@ -21,18 +21,18 @@ PN532RevK::begin (int timeout)
    if (HAL (writeCommand) (buf, 1) || HAL (readResponse) (buf, sizeof (buf), timeout) < 4)
       return 0;
    uint32_t ver = (buf[0] << 24) + (buf[1] << 16) + (buf[2] << 8) + buf[3];
+   buf[0] = 0x32;               // RFConfiguration
+   buf[1] = 5;                  // Config item 5 (MaxRetries)
+   buf[2] = 0xFF;               // MxRtyATR (default = 0xFF)
+   buf[3] = 0x01;               // MxRtyPSL (default = 0x01)
+   buf[4] = 0x01;               // MxRtyPassiveActivation
+   if (HAL (writeCommand) (buf, 5) || HAL (readResponse) (buf, sizeof (buf), timeout) < 0)
+      return 0;
    buf[0] = 0x14;               // SAMConfiguration
    buf[1] = 0x01;               // Normal
    buf[2] = 20;                 // *50ms timeout
    buf[3] = 0x01;               // Use IRQ
    if (HAL (writeCommand) (buf, 4) || HAL (readResponse) (buf, sizeof (buf), timeout) < 0)
-      return 0;
-   buf[0] = 0x32;               // RFConfiguration
-   buf[1] = 5;                  // Config item 5 (MaxRetries)
-   buf[2] = 0xFF;               // MxRtyATR (default = 0xFF)
-   buf[3] = 0x01;               // MxRtyPSL (default = 0x01)
-   buf[4] = 1;
-   if (HAL (writeCommand) (buf, 5) || HAL (readResponse) (buf, sizeof (buf), timeout) < 0)
       return 0;
    // SetParameters - not necessary
    debugf ("PN532 GetFirmwareVersion=%08X", ver);
@@ -66,20 +66,23 @@ PN532RevK::getID (String & id1, int timeout)
    //debug ("PN532 InListPassiveTarget");
    id1 = String ();             // defaults
    Tg1 = 0;
-   uint8_t buf[25];
+   uint8_t buf[64];
    buf[0] = 0x4A;               // InListPassiveTarget
    buf[1] = 1;                  // 1 tag
    buf[2] = 0;                  // 106 kbps type A (ISO/IEC14443 Type A)
-   if (HAL (writeCommand) (buf, 3) || HAL (readResponse) (buf, sizeof (buf), timeout) < 1)
+   if (HAL (writeCommand) (buf, 3))
+      return 0;
+   int l = HAL (readResponse) (buf, sizeof (buf), timeout);
+   debugf ("PN532 InListPassiveTarget Tags=%d len=%d", buf[0], l);
+   if (l < 6)
       return 0;
    int tags = buf[0];
-   debugf ("PN532 InListPassiveTarget Tags=%d", tags);
    Tg1 = buf[1];
    if (tags < 1)
       return tags;
-   char cid[15];
+   char cid[21];
    int n;
-   for (n = 0; n < 7 && n < buf[5]; n++)
+   for (n = 0; n < 10 && n < buf[5]; n++)
       sprintf_P (cid + n * 2, PSTR ("%02X"), buf[6 + n]);
    id1 = String (cid);
    return tags;
