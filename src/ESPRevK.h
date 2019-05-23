@@ -120,7 +120,7 @@ class ESPRevK
    boolean pub(const __FlashStringHelper *prefix, const __FlashStringHelper *tag, const __FlashStringHelper *fmt=NULL, ...);	// Publish general
    boolean pub(boolean retain, const __FlashStringHelper *prefix, const __FlashStringHelper *tag,  const __FlashStringHelper *fmt=NULL, ...);	// Publish general (with retain)
    boolean pub(boolean retain, const char *prefix, const char *tag,  const __FlashStringHelper *fmt=NULL, ...);	// Publish general (with retain)
-   boolean setting(const __FlashStringHelper *tag,const char*value=NULL); // Apply a setting (gets written to EEPROM)
+   boolean setting(const __FlashStringHelper *tag,const char*value); // Apply a setting (gets written to EEPROM)
    boolean setting(const __FlashStringHelper *tag,const byte*value=NULL,size_t len=0); // Apply a setting (gets written to EEPROM)
    boolean ota(int delay=0);	// Do upgrade
    boolean restart(int delay=0);	// Save settings and restart
