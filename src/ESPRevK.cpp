@@ -350,7 +350,6 @@ doupdate (char *url)
 {
    int ret = 0;
    pub (true, prefixstate, NULL, F ("0 OTA https://%s%s"), otahost, url);
-   delay (100);
    mqtt.disconnect ();
    delay (100);
    debugf ("OTA https://%s%s", otahost, url);
@@ -367,11 +366,14 @@ doupdate (char *url)
       ok = ESPhttpUpdate.update (client, String (otahost), 443, String (url));
    }
    debugf ("OTA done %s", ESPhttpUpdate.getLastErrorString ().c_str ());
-   mqtt.connect (hostname, mqttbackup ? NULL : mqttuser, mqttbackup ? NULL : mqttpass);
-   if (ok)
-      pub (true, prefixstate, NULL, F ("0 OTA Reboot"));
-   else
-      pub (true, prefixstate, NULL, F ("0 OTA Error %s"), ESPhttpUpdate.getLastErrorString ().c_str ());
+   if (mqtthost)
+   {
+      mqtt.connect (hostname, mqttbackup ? NULL : mqttuser, mqttbackup ? NULL : mqttpass);
+      if (ok)
+         pub (true, prefixstate, NULL, F ("0 OTA Reboot"));
+      else
+         pub (true, prefixstate, NULL, F ("0 OTA Error %s"), ESPhttpUpdate.getLastErrorString ().c_str ());
+   }
    return ok ? 0 : ESPhttpUpdate.getLastError ();
 }
 
@@ -427,6 +429,12 @@ upgrade (int appnamelen, const char *appname)
 const char *
 localsetting (const char *name, const byte * value, size_t len)
 {                               // Apply a local setting (return PROGMEM tag)
+   if (mqtthost && !strncmp_P (name, PSTR ("mqtt"), 4) && mqtt.connected ())
+   {
+      pub (true, prefixstate, NULL, F ("0 Config change"));
+      mqtt.disconnect ();
+      delay (100);
+   }
 #define s(n) do{const char*t=PSTR(#n);if(!strcmp_P(name,t)){n=(const char*)value;return t;}}while(0)
 #define n(n,d) do{const char*t=PSTR(#n);if(!strcmp_P(name,t)){n=(len?atoi((const char*)value):d);return t;}}while(0)
 #define f(n,l) do{const char*t=PSTR(#n);if(!strcmp_P(name,t)){if(len&&len!=l)return NULL;n=value;return t;}}while(0)
@@ -712,7 +720,7 @@ ESPRevK::ESPRevK (const char *myappname, const char *myappversion, const char *m
       wifissid = PCPY (WIFISSID);
 #endif
 #ifdef OTAHOST
-   if (!otahost)
+   if (!otahost || !*otahost)
       otahost = PCPY (OTAHOST);
 #endif
 #ifdef MQTTHOST
@@ -721,6 +729,8 @@ ESPRevK::ESPRevK (const char *myappname, const char *myappversion, const char *m
 #endif
    if (mqtthost && !*mqtthost)
       mqtthost = NULL;
+   if (mqtthost2 && !*mqtthost2)
+      mqtthost2 = NULL;
    if (!prefixcommand)
       prefixcommand = PCPY ("command");
    if (!prefixsetting)
@@ -930,6 +940,11 @@ ESPRevK::loop ()
             return false;
          }
       }
+   } else if (mqttconnected)
+   {                            // Uh? config change or something
+      mqttconnected = false;
+      app_command ("disconnect", NULL, 0);
+      debug ("MQTT disconnected");
    }
 #ifdef	REVKDEBUG
    static long ticker = 0;
@@ -948,7 +963,7 @@ static boolean
 pubap (boolean retain, const __FlashStringHelper * prefix, const __FlashStringHelper * suffix,
        const __FlashStringHelper * fmt, va_list ap)
 {
-   if (!mqtthost || !hostname)
+   if (!mqtt.connected () || !hostname)
       return false;             // No MQTT
    char temp[200] = {
    };
@@ -965,7 +980,7 @@ pubap (boolean retain, const __FlashStringHelper * prefix, const __FlashStringHe
 static boolean
 pubap (boolean retain, const char *prefix, const __FlashStringHelper * suffix, const __FlashStringHelper * fmt, va_list ap)
 {
-   if (!mqtthost || !hostname)
+   if (!mqtt.connected () || !hostname)
       return false;             // No MQTT
    char temp[200] = {
    };
@@ -982,7 +997,7 @@ pubap (boolean retain, const char *prefix, const __FlashStringHelper * suffix, c
 static boolean
 pubap (boolean retain, const char *prefix, const char *suffix, const __FlashStringHelper * fmt, va_list ap)
 {
-   if (!mqtthost || !hostname)
+   if (!mqtt.connected () || !hostname)
       return false;             // No MQTT
    char temp[200] = {
    };
@@ -999,7 +1014,7 @@ pubap (boolean retain, const char *prefix, const char *suffix, const __FlashStri
 static boolean
 pubap (boolean retain, const char *prefix, const __FlashStringHelper * suffix, unsigned int len, const byte * data)
 {
-   if (!mqtthost || !hostname)
+   if (mqtt.connected () || !hostname)
       return false;             // No MQTT
    char topic[101];
    if (suffix)
@@ -1260,7 +1275,6 @@ ESPRevK::sleep (unsigned long s)
       return;                   // Duh
    debugf ("Sleeping for %d seconds, good night...", s);
    pub (true, prefixstate, NULL, F ("0 Sleep"));
-   delay (100);
    mqtt.disconnect ();
    delay (100);
    wifi_station_disconnect ();
@@ -1279,7 +1293,6 @@ ESPRevK::mqttclose (const __FlashStringHelper * reason)
       pub (true, prefixstate, NULL, F ("0 %S"), reason);
    else
       pub (true, prefixstate, NULL, F ("0"));
-   delay (100);
    mqtt.disconnect ();
    delay (100);
    mqttconnected = false;
