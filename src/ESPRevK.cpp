@@ -1014,7 +1014,7 @@ pubap (boolean retain, const char *prefix, const char *suffix, const __FlashStri
 static boolean
 pubap (boolean retain, const char *prefix, const __FlashStringHelper * suffix, unsigned int len, const byte * data)
 {
-   if (mqtt.connected () || !hostname)
+   if (!mqtt.connected () || !hostname)
       return false;             // No MQTT
    char topic[101];
    if (suffix)
