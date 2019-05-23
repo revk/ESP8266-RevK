@@ -1,6 +1,6 @@
 // Example application
 
-#include <ESP8266RevK.h>
+#include <ESPRevK.h>
 
 #define app_settings  \
   s(mysetting1);   \
@@ -12,7 +12,7 @@
 
   // *** Set your own OTA server, SSID, password, and MQTT server here
 
-  ESP8266RevK revk(__FILE__, __DATE__ " " __TIME__, "ota.revk.uk", "mqtt.revk.uk"); // also SSID, password can be added
+  ESPRevK revk(__FILE__, __DATE__ " " __TIME__, "ota.revk.uk", "mqtt.revk.uk"); // also SSID, password can be added
 
   const char* app_setting(const char *tag, const byte *value, size_t len)
   { // Called for settings retrieved from EEPROM, return PSTR for tag if setting is OK
