@@ -126,7 +126,7 @@ class ESPRevK
    boolean restart(int delay=0);	// Save settings and restart
    void sleep(unsigned long s);	// Got to sleep
    void mqttclose(const __FlashStringHelper *reason=NULL); // Close (will typically reopen on next loop)
-   boolean mqttopen(); // Re-open MQTT
+   boolean mqttopen(boolean silent=false); // Re-open MQTT
 
 #define s(n) const char *get_##n(); // return setting
 #define f(n,b) const byte *get_##n(); // return setting
