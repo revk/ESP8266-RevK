@@ -416,6 +416,7 @@ doupdate (char *url)
       pub (true, prefixstate, NULL, F ("0 OTA https://%s%s"), otahost, url);
       mqtt.disconnect ();
       delay (100);
+      mqttclientsecure.stop();
    }
    debugf ("OTA https://%s%s", otahost, url);
    int ok = 0;
@@ -1323,6 +1324,7 @@ ESPRevK::mqttclose (const __FlashStringHelper * reason)
       pub (true, prefixstate, NULL, F ("0"));
    mqtt.disconnect ();
    delay (100);
+   mqttclientsecure.stop();
    mqttconnected = false;
    mqttretry = 0;
 }
