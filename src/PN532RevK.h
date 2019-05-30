@@ -15,10 +15,15 @@ class PN532RevK
     uint8_t release(unsigned int timeout=100); // Release target
     uint8_t target(unsigned int timeout=100); // Start as target
     uint8_t led(uint8_t led=0,unsigned int timeout=100);	// Set GPIO output (e.g. LED)
+    int p3(unsigned int timeout=100);
+    void set_aid(const uint8_t *aid);	 // Set AID (3 bytes)
+    void set_aes(const uint8_t *aes);	 // Set AES (8 bytes)
 
   private:
     PN532Interface *_interface;
     uint8_t Tg1; // Tag ID
+    uint8_t aid[3]; // AID for security checks
+    uint8_t aes[16];	// AES for security checks
 };
 
 #endif
