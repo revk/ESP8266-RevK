@@ -2,6 +2,7 @@
 #define __PN532RevK_H__
 
 #include <PN532Interface.h>
+#include <AES.h>
 
 class PN532RevK
 {
@@ -18,6 +19,7 @@ class PN532RevK
     int p3(unsigned int timeout=100);
     void set_aid(const uint8_t *aid);	 // Set AID (3 bytes)
     void set_aes(const uint8_t *aes);	 // Set AES (8 bytes)
+    int desfire_cmac (AES & A, byte cmd, int len, byte * buf, unsigned int maxlen, int timeout, byte*sk1,byte *sk2); // Send using cmac
 
   private:
     PN532Interface *_interface;

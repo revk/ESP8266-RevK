@@ -94,6 +94,90 @@ PN532RevK::inField (unsigned int timeout)
    return buf[0];               // Status
 }
 
+int
+PN532RevK::desfire_cmac (AES & A, byte cmd, int len, byte * buf, unsigned int maxlen, int timeout, byte * sk1, byte * sk2)
+{                               // Send and receive, puts cmd in buf[2]. Len is additional bytes after cmd. buf[0]/buf[1] need to available
+   buf[0] = 0x40;               // InDataExchange
+   buf[1] = Tg1;
+   buf[2] = cmd;
+   if (HAL (writeCommand) (buf, len + 3))
+      return -101;
+   if (sk1 && sk2)
+   {                            // Update CMAC
+      unsigned int n = len + 1,
+         p;
+      if (!n || (n & 15))
+      {                         // Padding
+         if (n + 2 < maxlen)
+            buf[2 + n++] = 0x80;
+         while ((n & 15) && n + 2 < maxlen)
+            buf[2 + n++] = 0;
+         for (p = 0; p < 16; p++)
+            buf[2 + n - 16 + p] ^= sk2[p];
+      } else
+         for (p = 0; p < 16; p++)
+            buf[2 + n - 16 + p] ^= sk1[p];
+      A.cbc_encrypt (buf + 2, buf + 2, n / 16); // Update CMAC
+   }
+   len = HAL (readResponse) (buf, maxlen, timeout);
+   if (len < 0)
+      return len;
+   if (len < 2)
+      return -102;
+   len -= 2;
+   if (*buf)
+      return -1000 - *buf;      // Bad status from PN532
+   if (buf[1] == 0xAF)
+   {                            // Additional frames
+      // TODO - may not be needed
+   }
+   if (buf[1])
+      return -2000 - buf[1];    // Bad status from card
+   if (sk1 && sk2)
+   {                            // Update and check CMAC
+      if (len < 8)
+         return -103;
+      len -= 8;                 // Lose CMAC
+      unsigned int n = len,
+         p;
+      byte *sk = sk1;
+      byte cmac[8];
+      memcpy ((void *) cmac, (void *) (buf + 2 + len), 8);
+      buf[2 + n++] = buf[1];    // Append status
+      if (!n || (n & 15))
+      {                         // Padding
+         if (n + 2 < maxlen)
+            buf[2 + n++] = 0x80;
+         while ((n & 15) && n + 2 < maxlen)
+            buf[2 + n++] = 0;
+         sk = sk2;
+      }
+      for (p = 0; p < 16; p++)
+         buf[2 + n - 16 + p] ^= sk[p];
+      byte temp[16],
+        c = 0;
+      while (c < n / 16)
+         A.cbc_encrypt (buf + 2 + (c++) * 16, temp, 1); // Update CMAC
+      // Undo, so we have a response you can use...
+      for (p = 0; p < 16; p++)
+         buf[2 + n - 16 + p] ^= sk[p];
+      // Check CMAC
+      if (memcmp (cmac, temp, 8))
+         return -104;
+   }
+   return len;
+}
+
+void
+key_left (byte * p)
+{
+   int n;
+   byte x = ((p[0] & 0x80) ? 0x87 : 0);
+   for (n = 0; n < 15; n++)
+      p[n] = (p[n] << 1) + (p[n + 1] >> 7);
+   p[15] = ((p[15] << 1) ^ x);
+}
+
 uint8_t
 PN532RevK::getID (String & id1, unsigned int timeout)
 {                               // Return tag id
@@ -117,96 +201,118 @@ PN532RevK::getID (String & id1, unsigned int timeout)
    int n;
    for (n = 0; n < 10 && n < buf[5]; n++)
       sprintf_P (cid + n * 2, PSTR ("%02X"), buf[6 + n]);
-   if (buf[5] == 7)
-   {
-      if (aid[0] || aid[1] || aid[2])
-      {                         // Check auth
+   if (n == 7 && (aid[0] || aid[1] || aid[2]))
+   {                            // 7 byte ID always the case on MIFARE
+      n *= 2;
+      AES A;
+      // Select application
+      buf[3] = aid[0];
+      buf[4] = aid[1];
+      buf[5] = aid[2];
+      l = desfire_cmac (A, 0x5A, 3, buf, sizeof (buf), timeout, NULL, NULL);
+      if (l != 0)
+         sprintf_P (cid + n, PSTR ("*AID fail %d %02X"), l, buf[1]);
+      if (!l)
+      {                         // Application exists
+         // AES exchange
          buf[0] = 0x40;         // InDataExchange
          buf[1] = Tg1;
-         buf[2] = 0x5A;         // Select application
-         buf[3] = aid[0];
-         buf[4] = aid[1];
-         buf[5] = aid[2];
-         if (HAL (writeCommand) (buf, 6))
+         buf[2] = 0xAA;         // AES Authenticate
+         buf[3] = 0x01;         // Key 1
+         if (HAL (writeCommand) (buf, 4))
             return 0;
          l = HAL (readResponse) (buf, sizeof (buf), timeout);
-         if (l >= 2 && !*buf && !buf[1])
-         {                      // Application exists
-            // AES exchange
+         if (l != 18 || *buf || buf[1] != 0xAF)
+            sprintf_P (cid + n, PSTR ("*AA fail %d %02X"), l, buf[1]);
+         else
+         {
+            A.set_key (aes, 16);
+            A.set_IV (0);
+            byte a[16], b[16];
+            ESP8266TrueRandom.memfill ((char *) a, 16);
+            A.cbc_decrypt (buf + 2, b, 1);
+            memcpy ((void *) buf + 3, (void *) a, 16);
+            memcpy ((void *) buf + 3 + 16, (void *) b + 1, 15);
+            buf[3 + 31] = b[0];
             buf[0] = 0x40;      // InDataExchange
             buf[1] = Tg1;
-            buf[2] = 0xAA;      // AES Authenticate
-            buf[3] = 0x01;      // Key 1
-            if (HAL (writeCommand) (buf, 4))
+            buf[2] = 0xAF;      // Additional frame
+            A.cbc_encrypt (buf + 3, buf + 3, 2);
+            if (HAL (writeCommand) (buf, 35))
                return 0;
             l = HAL (readResponse) (buf, sizeof (buf), timeout);
-            if (l != 18 || *buf || buf[1] != 0xAF)
-               sprintf_P (cid + 14, PSTR ("*AA fail %d %02X"), l, buf[1]);
+            if (l != 18 || *buf || buf[1])
+               sprintf_P (cid + n, PSTR ("*AA fail %d %02X"), l, buf[1]);
             else
             {
-		    // TODO CMAC check, as otherwise MiM could use one card and fake ID sent back as someone else, or not expired, etc.
-               AES A;
-               A.set_key (aes, 16);
-               byte iv[16], a[16], b[16];
-               memset ((void *) iv, 0, 16);
-               ESP8266TrueRandom.memfill ((char *) a, 16);
-               A.cbc_decrypt (buf + 2, b, 1, iv);
-               memcpy ((void *) buf + 3, (void *) a, 16);
-               memcpy ((void *) buf + 3 + 16, (void *) b + 1, 15);
-               buf[3 + 31] = b[0];
-               buf[0] = 0x40;   // InDataExchange
-               buf[1] = Tg1;
-               buf[2] = 0xAF;   // Additional frame
-               A.cbc_encrypt (buf + 3, buf + 3, 2, iv);
-               if (HAL (writeCommand) (buf, 35))
-                  return 0;
-               l = HAL (readResponse) (buf, sizeof (buf), timeout);
-               if (l != 18 || *buf || buf[1])
-                  sprintf_P (cid + 14, PSTR ("*AA fail %d %02X"), l, buf[1]);
+               A.cbc_decrypt (buf + 2, buf + 2, 1);
+               if (memcmp ((void *) buf + 2, a + 1, 15) || buf[2 + 15] != a[0])
+                  strcpy_P (cid + n, PSTR ("*AA fail AES"));
                else
                {
-                  A.cbc_decrypt (buf + 2, buf + 2, 1, iv);
-                  if (memcmp ((void *) buf + 2, a + 1, 15) || buf[2 + 15] != a[0])
-                     strcpy_P (cid + 14, PSTR ("*AA fail AES"));
-                  else
-                  {
-                     n = 14;
-                     byte fn;
-                     for (fn = 1; fn <= 2; fn++)
+                  memcpy ((void *) (a + 4), (void *) (b + 0), 4);       // Make a the new key
+                  memcpy ((void *) (a + 8), (void *) (a + 12), 4);
+                  memcpy ((void *) (a + 12), (void *) (b + 12), 4);
+                  A.set_key (a, 16);    // Session key
+#ifdef REVKDEBUG
+                  Serial.printf ("Skey %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n", a[0],
+                                 a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8], a[9], a[10], a[11], a[12], a[13], a[14], a[15]);
+#endif
+                  A.set_IV (0); // To work out the sub keys
+                  memset ((void *) a, 0, 16);
+                  A.cbc_encrypt (a, a, 1);
+                  key_left (a); // a is now subkey1
+#ifdef REVKDEBUG
+                  Serial.printf ("SK1  %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n", a[0],
+                                 a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8], a[9], a[10], a[11], a[12], a[13], a[14], a[15]);
+#endif
+                  memcpy ((void *) b, (void *) a, 16);
+                  key_left (b); // b is now subkey2
+#ifdef REVKDEBUG
+                  Serial.printf ("SK2  %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n", b[0],
+                                 b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]);
+#endif
+                  A.set_IV (0); // ready to start CMAC messages
+                  byte fn;
+                  for (fn = 1; fn <= 2; fn++)
+                  {             // Add file 1 and 2 to id
+                     // Get file settings
+                     buf[3] = fn;
+                     l = desfire_cmac (A, 0xF5, 1, buf, sizeof (buf), timeout, a, b);
+#if 1
+                     if (l != 7)
                      {
-                        buf[0] = 0x40;  // InDataExchange
-                        buf[1] = Tg1;
-                        buf[2] = 0xF5;  // Get File Details
+                        sprintf_P (cid + n, PSTR ("*File%d fail %d %02X"), fn, l, buf[1]);      // TODO debug
+                        break;
+                     }
+#endif
+                     if (l == 7)
+                     {
+                        unsigned int s = buf[6] + (buf[7] << 8) + (buf[8] << 16);
+                        if (s > sizeof (cid) - 2 - n)
+                           s = sizeof (cid) - 2 - n;
+                        // Get file content
                         buf[3] = fn;    // File 1 (ID)
-                        if (HAL (writeCommand) (buf, 4))
-                           return 0;
-                        l = HAL (readResponse) (buf, sizeof (buf), timeout);
-                        if (l >= 17 && !*buf && !buf[1])
+                        buf[4] = 0;     // Offset
+                        buf[5] = 0;
+                        buf[6] = 0;
+                        buf[7] = s;
+                        buf[8] = s >> 8;
+                        buf[9] = s >> 16;
+                        l = desfire_cmac (A, 0xBD, 7, buf, sizeof (buf), timeout, a, b);
+#if 1
+                        if (l != s)
                         {
-                           unsigned int s = buf[6] + (buf[7] << 8) + (buf[8] << 16);
-                           if (s > sizeof (cid) - 2 - n)
-                              s = sizeof (cid) - 2 - n;
-                           buf[0] = 0x40;       // InDataExchange
-                           buf[1] = Tg1;
-                           buf[2] = 0xBD;       // read file
-                           buf[3] = fn; // File 1 (ID)
-                           buf[4] = 0;  // Offset
-                           buf[5] = 0;
-                           buf[6] = 0;
-                           buf[7] = s;
-                           buf[8] = s >> 8;
-                           buf[9] = s >> 16;
-                           if (HAL (writeCommand) (buf, 10))
-                              return 0;
-                           l = HAL (readResponse) (buf, sizeof (buf), timeout);
-                           if (l == 10 + s && !*buf && !buf[1])
-                           {    // ID file
-                              l -= 10;
-                              cid[n++] = ' ';
-                              memcpy ((void *) cid + n, (void *) buf + 2, l);
-                              n += l;
-                              cid[n] = 0;
-                           }
+                           sprintf_P (cid + n, PSTR ("*Data%d fail %d %02X %d"), fn, l, buf[1], s);     // TODO debug
+                           break;
+                        }
+#endif
+                        if (l == s)
+                        {       // ID file
+                           cid[n++] = ' ';
+                           memcpy ((void *) cid + n, (void *) buf + 2, s);
+                           n += s;
+                           cid[n] = 0;
                         }
                      }
                   }
