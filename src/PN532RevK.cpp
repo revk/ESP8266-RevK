@@ -144,7 +144,7 @@ PN532RevK::getID (String & id1, unsigned int timeout)
                sprintf_P (cid + 14, PSTR ("*AA fail %d %02X"), l, buf[1]);
             else
             {
-               // Note, this is not validating CMAC or handling encrypted comms settings
+		    // TODO CMAC check, as otherwise MiM could use one card and fake ID sent back as someone else, or not expired, etc.
                AES A;
                A.set_key (aes, 16);
                byte iv[16], a[16], b[16];
