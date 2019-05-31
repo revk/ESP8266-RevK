@@ -279,7 +279,7 @@ PN532RevK::getID (String & id1, unsigned int timeout)
                      // Get file settings
                      buf[3] = fn;
                      l = desfire_cmac (A, 0xF5, 1, buf, sizeof (buf), timeout, a, b);
-#if 1
+#ifdef REVKDEBUG
                      if (l != 7)
                      {
                         sprintf_P (cid + n, PSTR ("*File%d fail %d %02X"), fn, l, buf[1]);      // TODO debug
@@ -300,7 +300,7 @@ PN532RevK::getID (String & id1, unsigned int timeout)
                         buf[8] = s >> 8;
                         buf[9] = s >> 16;
                         l = desfire_cmac (A, 0xBD, 7, buf, sizeof (buf), timeout, a, b);
-#if 1
+#ifdef REVKDEBUG
                         if (l != s)
                         {
                            sprintf_P (cid + n, PSTR ("*Data%d fail %d %02X %d"), fn, l, buf[1], s);     // TODO debug
