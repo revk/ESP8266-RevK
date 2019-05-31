@@ -144,6 +144,7 @@ PN532RevK::getID (String & id1, unsigned int timeout)
                sprintf_P (cid + 14, PSTR ("*AA fail %d %02X"), l, buf[1]);
             else
             {
+               // Note, this is not validating CMAC or handling encrypted comms settings
                AES A;
                A.set_key (aes, 16);
                byte iv[16], a[16], b[16];
@@ -169,9 +170,45 @@ PN532RevK::getID (String & id1, unsigned int timeout)
                      strcpy_P (cid + 14, PSTR ("*AA fail AES"));
                   else
                   {
-                     // TODO reading files and shit, but for now, just add a + to show secure
-                     cid[14] = '+';
-                     cid[15] = 0;
+                     n = 14;
+                     byte fn;
+                     for (fn = 1; fn <= 2; fn++)
+                     {
+                        buf[0] = 0x40;  // InDataExchange
+                        buf[1] = Tg1;
+                        buf[2] = 0xF5;  // Get File Details
+                        buf[3] = fn;    // File 1 (ID)
+                        if (HAL (writeCommand) (buf, 4))
+                           return 0;
+                        l = HAL (readResponse) (buf, sizeof (buf), timeout);
+                        if (l >= 17 && !*buf && !buf[1])
+                        {
+                           unsigned int s = buf[6] + (buf[7] << 8) + (buf[8] << 16);
+                           if (s > sizeof (cid) - 2 - n)
+                              s = sizeof (cid) - 2 - n;
+                           buf[0] = 0x40;       // InDataExchange
+                           buf[1] = Tg1;
+                           buf[2] = 0xBD;       // read file
+                           buf[3] = fn; // File 1 (ID)
+                           buf[4] = 0;  // Offset
+                           buf[5] = 0;
+                           buf[6] = 0;
+                           buf[7] = s;
+                           buf[8] = s >> 8;
+                           buf[9] = s >> 16;
+                           if (HAL (writeCommand) (buf, 10))
+                              return 0;
+                           l = HAL (readResponse) (buf, sizeof (buf), timeout);
+                           if (l == 10 + s && !*buf && !buf[1])
+                           {    // ID file
+                              l -= 10;
+                              cid[n++] = ' ';
+                              memcpy ((void *) cid + n, (void *) buf + 2, l);
+                              n += l;
+                              cid[n] = 0;
+                           }
+                        }
+                     }
                   }
                }
             }
