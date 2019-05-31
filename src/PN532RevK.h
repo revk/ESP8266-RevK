@@ -21,9 +21,9 @@ class PN532RevK
 
   private:
     PN532Interface *_interface;
-    uint8_t Tg1; // Tag ID
-    uint8_t aid[3]; // AID for security checks
-    uint8_t aes[16];	// AES for security checks
+    byte Tg1; // Tag ID
+    byte aid[3]; // AID for security checks
+    byte aes[16];	// AES for security checks
 };
 
 #endif
