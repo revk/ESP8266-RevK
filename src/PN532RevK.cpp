@@ -210,8 +210,10 @@ PN532RevK::getID (String & id1, unsigned int timeout)
       buf[4] = aid[1];
       buf[5] = aid[2];
       l = desfire_cmac (A, 0x5A, 3, buf, sizeof (buf), timeout, NULL, NULL);
+#ifdef REVKDEGUG
       if (l != 0)
          sprintf_P (cid + n, PSTR ("*AID fail %d %02X"), l, buf[1]);
+#endif
       if (!l)
       {                         // Application exists
          // AES exchange
