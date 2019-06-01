@@ -115,16 +115,18 @@ PN532RevK::desfire_crc (unsigned int len, byte * data)
 }
 
 int
-PN532RevK::desfire_tx (AES & A, byte cmd, int len, byte * buf, int timeout, byte * sk1, byte * sk2)
-{                               // Send message, updating CMAC (if sk1/2 set). cmd is put in buf[0]. buf must have space for padding
+PN532RevK::desfire_tx (byte cmd, int len, byte * buf, int timeout)
+{                               // Send message, updating CMAC (if secure). cmd is put in buf[0]. buf must have space for padding
    // TODO we should at least have CMAC mode for file commands, if not proper encrypted even...
    byte msg[3];
    msg[0] = 0x40;               // InDataExchange
    msg[1] = Tg1;
    buf[0] = cmd;
+   if (cmd == 0x5A)
+      secure = false;           // Select app clears security
    if (HAL (writeCommand) (msg, 2, buf, len + 1))
       return -101;
-   if (sk1 && sk2)
+   if (secure)
    {                            // Update CMAC
       unsigned int n = len + 1,
          p;
@@ -143,8 +145,8 @@ PN532RevK::desfire_tx (AES & A, byte cmd, int len, byte * buf, int timeout, byte
 }
 
 int
-PN532RevK::desfire_rx (AES & A, int maxlen, byte * buf, int timeout, byte * sk1, byte * sk2)
-{                               // Get response. PN532 status in buf[0], and response status in buf[1]. Update and check CMAC is sk1/2 set.
+PN532RevK::desfire_rx (int maxlen, byte * buf, int timeout)
+{                               // Get response. PN532 status in buf[0], and response status in buf[1]. Update and check CMAC if secure
    int len = HAL (readResponse) (buf, maxlen, timeout);
    if (len < 0)
       return len;
@@ -158,8 +160,11 @@ PN532RevK::desfire_rx (AES & A, int maxlen, byte * buf, int timeout, byte * sk1,
       // TODO - may not be needed
    }
    if (buf[1])
+   {
+      secure = false;
       return -2000 - buf[1];    // Bad status from card
-   if (sk1 && sk2)
+   }
+   if (secure)
    {                            // Update and check CMAC
       if (len < 8)
          return -103;
@@ -197,7 +202,7 @@ PN532RevK::desfire_rx (AES & A, int maxlen, byte * buf, int timeout, byte * sk1,
 }
 
 int
-PN532RevK::desfire_rxd (AES & A, int maxlen, byte * buf, int timeout)
+PN532RevK::desfire_rxd (int maxlen, byte * buf, int timeout)
 {                               // Get response. PN532 status in buf[0], and response status in buf[1]. Decrypt response
    int len = HAL (readResponse) (buf, maxlen, timeout);
    if (len < 0)
@@ -212,7 +217,10 @@ PN532RevK::desfire_rxd (AES & A, int maxlen, byte * buf, int timeout)
       // TODO - may not be needed
    }
    if (buf[1])
+   {
+      secure = false;
       return -2000 - buf[1];    // Bad status from card
+   }
    if (!len)
       return len;
    if (len & 15)
@@ -222,12 +230,12 @@ PN532RevK::desfire_rxd (AES & A, int maxlen, byte * buf, int timeout)
 }
 
 int
-PN532RevK::desfire (AES & A, byte cmd, int len, byte * buf, unsigned int maxlen, int timeout, byte * sk1, byte * sk2, String & err)
+PN532RevK::desfire (byte cmd, int len, byte * buf, unsigned int maxlen, String & err, int timeout)
 {
-   int l = desfire_tx (A, cmd, len, buf, timeout, sk1, sk2);
+   int l = desfire_tx (cmd, len, buf, timeout);
    if (l < 0)
       return l;
-   l = desfire_rx (A, maxlen, buf, timeout, sk1, sk2);
+   l = desfire_rx (maxlen, buf, timeout);
    if (l < 0)
    {
       byte status = buf[1];
@@ -272,6 +280,7 @@ uint8_t
 PN532RevK::getID (String & id, String & err, unsigned int timeout)
 {                               // Return tag id
    //debug ("PN532 InListPassiveTarget");
+   secure = false;
    id = String ();              // defaults
    err = String ();
    Tg1 = 0;
@@ -297,17 +306,16 @@ PN532RevK::getID (String & id, String & err, unsigned int timeout)
       return 0;
    }
    memcpy ((void *) cid, (void *) (buf + 6), cidlen = buf[5]);
-   if (aid[0] || aid[1] || aid[2])
+   if (aidset)
    {
-      AES A;
       // Select application (we expect that this could mean an err, no such app)
       buf[1] = aid[0];
       buf[2] = aid[1];
       buf[3] = aid[2];
-      l = desfire_tx (A, 0x5A, 3, buf, timeout, NULL, NULL);
+      l = desfire_tx (0x5A, 3, buf, timeout);
       if (l < 0)
          return 0;
-      l = desfire_rx (A, sizeof (buf), buf, timeout, NULL, NULL);
+      l = desfire_rx (sizeof (buf), buf, timeout);
       if (!l)
       {                         // Application exists
          // AES exchange
@@ -321,18 +329,17 @@ PN532RevK::getID (String & id, String & err, unsigned int timeout)
          if (l != 18 || *buf || buf[1] != 0xAF)
          {
             byte status = buf[1];
-            sprintf_P ((char *) buf, PSTR ("AA fail %d %02X"), l, status);
+            sprintf_P ((char *) buf, PSTR ("AA1 fail %d %02X"), l, status);
             err = String ((char *) buf);
          } else
          {
             A.set_key (aes, 16);
             A.set_IV (0);
-            byte a[16], b[16];
-            ESP8266TrueRandom.memfill ((char *) a, 16);
-            A.cbc_decrypt (buf + 2, b, 1);
-            memcpy ((void *) buf + 3, (void *) a, 16);
-            memcpy ((void *) buf + 3 + 16, (void *) b + 1, 15);
-            buf[3 + 31] = b[0];
+            A.cbc_decrypt (buf + 2, sk2, 1);
+            ESP8266TrueRandom.memfill ((char *) sk1, 16);
+            memcpy ((void *) buf + 3, (void *) sk1, 16);
+            memcpy ((void *) buf + 3 + 16, (void *) sk2 + 1, 15);
+            buf[3 + 31] = sk2[0];
             buf[0] = 0x40;      // InDataExchange
             buf[1] = Tg1;
             buf[2] = 0xAF;      // Additional frame
@@ -344,40 +351,42 @@ PN532RevK::getID (String & id, String & err, unsigned int timeout)
             timed = micros () - timed;
             if (timed > nfcslow)
             {
-               sprintf_P ((char *) buf, PSTR ("AA slow %dus"), timed);
+               sprintf_P ((char *) buf, PSTR ("AA2 slow %dus"), timed);
                err = String ((char *) buf);
             } else if (l != 18 || *buf || buf[1])
             {
                byte status = buf[1];
-               sprintf_P ((char *) buf, PSTR ("AA fail %d %02X"), l, status);
+               sprintf_P ((char *) buf, PSTR ("AA2 fail %d %02X"), l, status);
                err = String ((char *) buf);
             } else
             {
                A.cbc_decrypt (buf + 2, buf + 2, 1);
-               if (memcmp ((void *) buf + 2, a + 1, 15) || buf[2 + 15] != a[0])
+               if (memcmp ((void *) buf + 2, sk1 + 1, 15) || buf[2 + 15] != sk1[0])
                {
                   strcpy_P ((char *) buf, PSTR ("AA AES fail"));
                   err = String ((char *) buf);
                } else
                {
-                  memcpy ((void *) (a + 4), (void *) (b + 0), 4);       // Make a the new key
-                  memcpy ((void *) (a + 8), (void *) (a + 12), 4);
-                  memcpy ((void *) (a + 12), (void *) (b + 12), 4);
-                  A.set_key (a, 16);    // Session key
+                  memcpy ((void *) (sk1 + 4), (void *) (sk2 + 0), 4);   // Make a the new key
+                  memcpy ((void *) (sk1 + 8), (void *) (sk1 + 12), 4);
+                  memcpy ((void *) (sk1 + 12), (void *) (sk2 + 12), 4);
+                  A.set_key (sk1, 16);  // Session key
                   A.set_IV (0); // To work out the sub keys
-                  memset ((void *) a, 0, 16);
-                  A.cbc_encrypt (a, a, 1);
-                  key_left (a); // a is now subkey1
-                  memcpy ((void *) b, (void *) a, 16);
-                  key_left (b); // b is now subkey2
+                  memset ((void *) sk1, 0, 16);
+                  A.cbc_encrypt (sk1, sk1, 1);
+                  key_left (sk1);
+                  memcpy ((void *) sk2, (void *) sk1, 16);
+                  key_left (sk2);
                   A.set_IV (0); // ready to start CMAC messages
+                  secure = true;
                   // Get real ID
-                  l = desfire_tx (A, 0x51, 0, buf, timeout, a, b);
+                  l = desfire_tx (0x51, 0, buf, timeout);
                   if (l < 0)
                      return 0;
-                  l = desfire_rxd (A, sizeof (buf), buf, timeout);
+                  l = desfire_rxd (sizeof (buf), buf, timeout);
                   if (l != 16)
                   {
+                     secure = false;
                      byte status = buf[1];
                      sprintf_P ((char *) buf, PSTR ("51 fail %d %02X"), l, status);
                      err = String ((char *) buf);
@@ -387,80 +396,18 @@ PN532RevK::getID (String & id, String & err, unsigned int timeout)
                      buf[9] = buf[1];
                      if (desfire_crc (8, buf + 2) != crc)
                      {
+                        secure = false;
                         strcpy_P ((char *) buf, PSTR ("ID CRC fail"));
                         err = String ((char *) buf);
-
                      } else
                      {
                         memcpy (cid, buf + 2, cidlen = 7);
                         cidsecure = true;
-                        // List apps
-                        l = desfire (A, 0x6F, 0, buf, sizeof (buf), timeout, a, b, err);
-                        if (l > 0)
-                        {
-                           unsigned int files = 0;
-                           while (l-- > 0)
-                              if (buf[2 + l] < 32)
-                                 files |= (1 << buf[2 + l]);
-                           byte fn;
-                           boolean commit = false;
-                           byte bcd[7];
-                           get_bcd_time (bcd);
-                           for (fn = 1; fn < 8; fn++)
-                              if (files & (1 << fn))
-                              { // Files we understand - see SS manual
-                                 // Get file details
-                                 buf[1] = fn;
-                                 l = desfire (A, 0xF5, 1, buf, sizeof (buf), timeout, a, b, err);
-                                 if (l < 6)
-                                    break;
-                                 if (fn == 1 && buf[2] == 4 && buf[6] == 10 && !buf[7] && !buf[8])
-                                 {      // Log file
-                                    unsigned int ci = ESP.getChipId ();
-                                    buf[1] = fn;
-                                    buf[2] = 0; // Offset in record
-                                    buf[3] = 0;
-                                    buf[4] = 0;
-                                    buf[5] = 10;
-                                    buf[6] = 0;
-                                    buf[7] = 0;
-                                    buf[8] = ci >> 16;
-                                    buf[9] = ci >> 8;
-                                    buf[10] = ci;
-                                    memcpy (buf + 11, bcd, 7);
-                                    l = desfire (A, 0x3B, 17, buf, sizeof (buf), timeout, a, b, err);
-                                    if (l < 0)
-                                       break;
-                                    commit = true;
-                                    continue;
-                                 }
-                                 if (fn == 2 && buf[2] == 2)
-                                 {      // Counter file
-                                    buf[1] = fn;
-                                    buf[2] = 1;
-                                    buf[3] = 0;
-                                    buf[4] = 0;
-                                    buf[5] = 0;
-                                    l = desfire (A, 0x0C, 5, buf, sizeof (buf), timeout, a, b, err);
-                                    if (l < 0)
-                                       break;
-                                    commit = true;
-                                    continue;
-                                 }
-                                 // TODO start/expiry/etc
-                              }
-                           if (commit)
-                              l = desfire (A, 0xC7, 0, buf, sizeof (buf), timeout, a, b, err);
-                        }
                      }
                   }
                }
             }
          }
-         buf[1] = 0;            // AID 0 (i.e don't leave logged in)
-         buf[2] = 0;
-         buf[3] = 0;
-         l = desfire (A, 0x5A, 3, buf, sizeof (buf), timeout, NULL, NULL, err);
       }
    }
    if (cidlen)
@@ -472,7 +419,41 @@ PN532RevK::getID (String & id, String & err, unsigned int timeout)
          strcpy_P ((char *) buf + n * 2, PSTR ("+"));   // Indicate that it is secure
       id = String ((char *) buf);
    }
+   if (*err.c_str ())
+      secure = false;
    return tags;
+}
+
+int
+PN532RevK::desfire_log (String & err, int timeout)
+{
+   if (!secure)
+      return -1;
+   uint8_t buf[32];
+   buf[1] = 0x01;               // File 1
+   buf[2] = 0;                  // Offset 0
+   buf[3] = 0;
+   buf[4] = 0;
+   buf[5] = 10;                 // Length 10
+   buf[6] = 0;
+   buf[7] = 0;
+   unsigned int ci = ESP.getChipId ();
+   buf[8] = ci >> 16;
+   buf[9] = ci >> 8;
+   buf[10] = ci;
+   get_bcd_time (buf + 11);
+   int l = desfire (0x3B, 17, buf, sizeof (buf), err, timeout);
+   if (l < 0)
+      return l;
+   buf[1] = 0x02;
+   buf[2] = 1;                  // Credit 1
+   buf[3] = 0;
+   buf[4] = 0;
+   buf[5] = 0;
+   l = desfire (0x0C, 5, buf, sizeof (buf), err, timeout);
+   if (l < 0)
+      return l;
+   return desfire (0xC7, 0, buf, sizeof (buf), err, timeout);
 }
 
 uint8_t
@@ -528,6 +509,7 @@ void
 PN532RevK::set_aid (const uint8_t * newaid)
 {                               // Set AID (3 bytes)
    memcpy ((void *) aid, (void *) newaid, sizeof (aid));
+   aidset = (aid[0] || aid[1] || aid[2]);
 }
 
 void

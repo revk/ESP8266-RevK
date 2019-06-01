@@ -20,14 +20,19 @@ class PN532RevK
     void set_aid(const uint8_t *aid);	 // Set AID (3 bytes)
     void set_aes(const uint8_t *aes);	 // Set AES (8 bytes)
     unsigned long desfire_crc(unsigned int len, byte*data);
-    int desfire_tx (AES & A, byte cmd, int len, byte * buf, int timeout, byte * sk1, byte * sk2);
-    int desfire_rx (AES & A, int maxlen, byte * buf, int timeout, byte * sk1, byte * sk2);
-    int desfire_rxd (AES & A, int maxlen, byte * buf, int timeout);
-    int desfire (AES & A, byte cmd, int len, byte * buf, unsigned int maxlen, int timeout, byte*sk1,byte *sk2,String &err); // Send using cmac
+    int desfire_tx ( byte cmd, int len, byte * buf, int timeout=0);
+    int desfire_rx (int maxlen, byte * buf, int timeout=0);
+    int desfire_rxd (int maxlen, byte * buf, int timeout=0);
+    int desfire (byte cmd, int len, byte * buf, unsigned int maxlen, String &err,int timeout=0); // Send/receive using cmac
+    int desfire_log (String &err,int timeout=0);
+    boolean secure; // If we have secure access confirmed
+    boolean aidset;	// If we have an AID for secure use
 
   private:
     PN532Interface *_interface;
     byte Tg1; // Tag ID
+    AES A;			// AES for secure desfire comms
+    byte sk1[16],sk2[16];	 // Sub keys for secure desfire comms
     byte aid[3]; // AID for security checks
     byte aes[16];	// AES for security checks
 };
