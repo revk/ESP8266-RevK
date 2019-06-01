@@ -11,7 +11,7 @@ class PN532RevK
     uint32_t begin(unsigned int timeout=1000); // Start, get version (0=bad)
     uint8_t cardsPresent(unsigned int timeout=100);	// return number of cards (0=error or none)
     uint8_t inField (unsigned int timeout=100);		// return if in field (0=OK, else status)
-    uint8_t getID(String &id1,unsigned int timeout=1000); // Get the ID (returns number of cards, i.e. 0 or 1)
+    uint8_t getID(String &id,String &err,unsigned int timeout=1000); // Get the ID (returns number of cards, i.e. 0 or 1)
     uint8_t data(uint8_t txlen,uint8_t *tx,uint8_t &rxlen,uint8_t *rx,unsigned int timeout=1000); // Exchange data, return 0 if OK (status), rx has status byte at start
     uint8_t release(unsigned int timeout=100); // Release target
     uint8_t target(unsigned int timeout=100); // Start as target
@@ -19,7 +19,11 @@ class PN532RevK
     int p3(unsigned int timeout=100);
     void set_aid(const uint8_t *aid);	 // Set AID (3 bytes)
     void set_aes(const uint8_t *aes);	 // Set AES (8 bytes)
-    int desfire_cmac (AES & A, byte cmd, int len, byte * buf, unsigned int maxlen, int timeout, byte*sk1,byte *sk2); // Send using cmac
+    unsigned long desfire_crc(unsigned int len, byte*data);
+    int desfire_tx (AES & A, byte cmd, int len, byte * buf, int timeout, byte * sk1, byte * sk2);
+    int desfire_rx (AES & A, int maxlen, byte * buf, int timeout, byte * sk1, byte * sk2);
+    int desfire_rxd (AES & A, int maxlen, byte * buf, int timeout);
+    int desfire (AES & A, byte cmd, int len, byte * buf, unsigned int maxlen, int timeout, byte*sk1,byte *sk2,String &err); // Send using cmac
 
   private:
     PN532Interface *_interface;
