@@ -22,7 +22,7 @@ class PN532RevK
     unsigned long desfire_crc(unsigned int len, byte*data);
     int desfire_tx ( byte cmd, int len, byte * buf, int timeout=0);
     int desfire_rx (int maxlen, byte * buf, int timeout=0);
-    int desfire_rxd (int maxlen, byte * buf, int timeout=0);
+    int desfire_rxd (int maxlen, byte * buf, int rlen=0,int timeout=0);
     int desfire (byte cmd, int len, byte * buf, unsigned int maxlen, String &err,int timeout=0); // Send/receive using cmac
     int desfire_log (String &err,int timeout=0);
     boolean secure; // If we have secure access confirmed
