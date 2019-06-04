@@ -51,7 +51,7 @@ class PN532RevK
     //   - A CRC is expected at byte rxenc, this is checked as well and length checked
     //   - The AES A IV is updated for CMAC checking
     //   - The return value is rxenc, i.e. rxenc includes status byte in count
-    //  If autenticated and rxenc is 0 then an 8 byte CMAC is expected
+    //  If authenticated and rxenc is 0 then an 8 byte CMAC is expected
     //   - The 8 bytes are removed
     //   - The CMAC process is done on response (payload+status) and checked
     //   - The return value is the length without the 8 byte CMAC
