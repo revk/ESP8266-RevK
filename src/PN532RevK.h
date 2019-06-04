@@ -36,8 +36,8 @@ class PN532RevK
     //  If not authenticated the command is sent, plain
     //  If authenticated and txenc set, then it is sent encrypted
     //   - A CRC is added to the end (at txlen), adding 4 bytes
-    //   - The command is padded as needed (up to 15 bytes)
-    //   - The command is encrypted from byte txenc (i.e. txenc bytes not encrtpted)
+    //   - The command is padded as needed (up to 16 bytes)
+    //   - The command is encrypted from byte txenc (i.e. txenc bytes not encrypted)
     //   - The encryption updates the AES A IV used for CMAC checking
     //  If authenticated and txenc is 0, then the command is sent plain
     //   - The command is CMAC processed to update the AES A IV for checking
@@ -60,7 +60,7 @@ class PN532RevK
     //  Send with txenc and cmd C4 does not add the CRC. ChangeKey has an extra CRC and padding you need to do first.
     // Examples
     //  Cmd 54 with txenc 1, rxenc 0, and len 2, adds CRC and encrypts from byte 1, returns 1 (status byte)
-    //  Cmd 51 with txenc 0, rxenc 8, and len 1, sends 51, receives 17 bytes, decryptes and checks CRC at byte 8, returns 8 (status + 7 byte UID)
+    //  Cmd 51 with txenc 0, rxenc 8, and len 1, sends 51, receives 17 bytes, decrypts and checks CRC at byte 8, returns 8 (status + 7 byte UID)
     int desfire_dx(byte cmd,unsigned int max,byte*data,unsigned int txlen,byte txenc=0,byte rxenc=0,int timeout=0);
     // Simplified (len and return are byte count after cmd/status)
     int desfire (byte cmd, int len, byte * buf, unsigned int maxlen, String & err, int timeout);
