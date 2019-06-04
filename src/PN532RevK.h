@@ -46,6 +46,7 @@ class PN532RevK
     //  If not authenticated and rxenc is set, this is the number of bytes expected, else error
     //   - The return value is the length of response including status byte at data[0]
     //  If authenticated and rxenc is set then this is expected to be an encrypted message
+    //   - The length has to be a multiple of 16 bytes (after status byte)
     //   - The payload is decrypted (i.e. all data after status byte)
     //   - A CRC is expected at byte rxenc, this is checked as well and length checked
     //   - The AES A IV is updated for CMAC checking
