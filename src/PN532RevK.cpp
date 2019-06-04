@@ -7,12 +7,19 @@
 #define HAL(func)   (_interface->func)
 #define nfcslow	50000           // Max response time for AES handshake, us
 
-// TODO
-// Maybe separate out desfire stuff to separate file
-// Separate non destructive CMAC function
-// General tx with mode for plain, cmac, or encrypted
-// General rx knowing secure, and option for encrypted which check crc
-// Maybe modify SPI to allow prefix for pn532 status and status byte to make code simpler
+#ifdef REVKDEBUG
+void
+dump (const char *prefix, unsigned int len, const byte * data)
+{
+   Serial.printf ("%-10s", prefix);
+   int n;
+   for (n = 0; n < len; n++)
+      Serial.printf (" %02X", data[n]);
+   Serial.printf ("\n");
+}
+#else
+#define dump(p,l,d)
+#endif
 
 PN532RevK::PN532RevK (PN532Interface & interface)
 {
@@ -103,7 +110,7 @@ uint8_t PN532RevK::inField (unsigned int timeout)
    return buf[0];               // Status
 }
 
-unsigned long
+unsigned int
 PN532RevK::desfire_crc (unsigned int len, byte * data)
 {
    unsigned int poly = 0xEDB88320;
@@ -122,147 +129,180 @@ PN532RevK::desfire_crc (unsigned int len, byte * data)
    return crc;
 }
 
-int
-PN532RevK::desfire_tx (byte cmd, int len, byte * buf, int timeout)
-{                               // Send message, updating CMAC (if secure). cmd is put in buf[0]. buf must have space for padding
-   // TODO we should at least have CMAC mode for file commands, if not proper encrypted even...
-   byte msg[3];
-   msg[0] = 0x40;               // InDataExchange
-   msg[1] = Tg1;
-   buf[0] = cmd;
-   if (cmd == 0x5A)
-      secure = false;           // Select app clears security
-   if (HAL (writeCommand) (msg, 2, buf, len + 1))
-      return -101;
-   if (secure)
-   {                            // Update CMAC
-      unsigned int n = len + 1,
-         p;
-      if (!n || (n & 15))
-      {                         // Padding
-         buf[n++] = 0x80;
-         while (n & 15)
-            buf[n++] = 0;
-         for (p = 0; p < 16; p++)
-            buf[n - 16 + p] ^= sk2[p];
-      } else
-         for (p = 0; p < 16; p++)
-            buf[n - 16 + p] ^= sk1[p];
-      A.cbc_encrypt (buf, buf, n / 16); // Update CMAC
+void
+PN532RevK::desfire_cmac (byte cmacout[16], unsigned int len, byte * data)
+{                               // Process message for CMAC, using and updating IV in AES A, return cmac
+   // Note, cmacout is final IV, but also used as scratchpad/tmp. Safe to pass cmacout as data
+   // Initial blocks
+   while (len > 16)
+   {
+      A.cbc_encrypt (data, cmacout, 1);
+      data += 16;
+      len -= 16;
    }
+   // Final block
+   unsigned int p;
+   if (len < 16)
+   {                            // Padded
+      for (p = 0; p < len; p++)
+         cmacout[p] = data[p] ^ sk2[p];
+      cmacout[p] = 0x80 ^ sk2[p];
+      for (p++; p < 16; p++)
+         cmacout[p] = sk2[p];
+   } else                       // Unpadded
+      for (p = 0; p < len; p++)
+         cmacout[p] = data[p] ^ sk1[p];
+   A.cbc_encrypt (cmacout, cmacout, 1);
 }
 
+#define MAXTX 33                // Not sure what it should be - but why not
+
+// DESFire data exchange, including encryption and CMAC and multi-part messages
+// See include file for details description
 int
-PN532RevK::desfire_rx (int maxlen, byte * buf, int timeout)
-{                               // Get response. PN532 status in buf[0], and response status in buf[1]. Update and check CMAC if secure
-   int len = HAL (readResponse) (buf, maxlen, timeout);
-   if (len < 0)
-      return len;
-   if (len < 2)
-      return -102;
-   len -= 2;
-   if (*buf)
-      return -1000 - *buf;      // Bad status from PN532
-   if (buf[1] == 0xAF)
-   {                            // Additional frames
-      // TODO - may not be needed
+PN532RevK::desfire_dx (byte cmd, unsigned int max, byte * data, unsigned int len, byte txenc, byte rxenc, int timeout)
+{                               // Data exchange
+   byte temp[16];
+   // Sending
+   if (cmd)
+      data[0] = cmd;            // For convenience
+   else
+      cmd = data[0];
+   dump ("Tx", len, data);
+   if (cmd == 0x5A || cmd == 0xAA || cmd == 0x1A || cmd == 0x0A)
+      authenticated = false;    // Authentication and select application loses authentication
+   // Pre process
+   if (authenticated)
+   {                            // We are authenticated
+      if (txenc)
+      {                         // Encrypted sending (updates IV)
+         if (txenc + ((len + 4 - txenc) | 15) + 1 > max)
+            return -999;
+         if (cmd != 0xC4)
+         {                      // Add CRC
+            unsigned int c = desfire_crc (len, data);
+            data[len++] = c;
+            data[len++] = c >> 8;
+            data[len++] = c >> 16;
+            data[len++] = c >> 24;
+         }
+         while ((len - txenc) & 15)
+            data[len++] = 0;    // Padding
+         A.cbc_encrypt (data + txenc, data + txenc, (len - txenc) / 16);
+         dump ("Tx(raw)", len, data);
+      } else                    // Update CMAC
+         desfire_cmac (temp, len, data);
    }
-   if (buf[1])
-   {
-      secure = false;
-      return -2000 - buf[1];    // Bad status from card
-   }
-   if (secure)
-   {                            // Update and check CMAC
-      if (len < 8)
-         return -103;
-      len -= 8;                 // Lose CMAC
-      unsigned int n = len,
-         p;
-      byte *sk = sk1;
-      byte cmac[8];
-      memcpy ((void *) cmac, (void *) (buf + 2 + len), 8);
-      buf[2 + n++] = buf[1];    // Append status
-      if (!n || (n & 15))
-      {                         // Padding
-         if (n + 2 < maxlen)
-            buf[2 + n++] = 0x80;
-         while ((n & 15) && n + 2 < maxlen)
-            buf[2 + n++] = 0;
-         sk = sk2;
+   {                            // Send the data
+      byte *p = data,
+         *e = data + len;
+      while (p < e)
+      {
+         if (p > data)
+            *--p = 0xAF;
+         int l = e - p;
+         if (l > MAXTX)
+            l = MAXTX;
+         temp[0] = 0x40;        // InDataExchange
+         temp[1] = Tg1;
+         if (HAL (writeCommand) (temp, 2, data, l))
+            return -101;
+         p += l;
+         if (p < e)
+         {                      // Expect AF response asking for more data
+            int r = HAL (readResponse) (temp, 3, timeout);
+            if (r < 0)
+               return r;
+            if (r < 2)
+               return -1000;
+            if (*temp)
+               return -1000 - *temp;    // Bad PN532 status
+            if (temp[1] != 0xAF)
+               return -2000 - temp[1];  // Bad DESFire status
+         }
       }
-      for (p = 0; p < 16; p++)
-         buf[2 + n - 16 + p] ^= sk[p];
-      if (n & 15)
-         return -105;           // No space
-      byte temp[16],
-        c = 0;
-      while (c < n / 16)
-         A.cbc_encrypt (buf + 2 + (c++) * 16, temp, 1); // Update CMAC
-      // Undo, so we have a response you can use...
-      for (p = 0; p < 16; p++)
-         buf[2 + n - 16 + p] ^= sk[p];
-      // Check CMAC
-      if (memcmp (cmac, temp, 8))
-         return -104;
    }
-   return len;
-}
-
-int
-PN532RevK::desfire_rxd (int maxlen, byte * buf, int rlen, int timeout)
-{                               // Get response. PN532 status in buf[0], and response status in buf[1]. Decrypt response. If rlen set, check CRC. Return len from buf+2
-   int len = HAL (readResponse) (buf, maxlen, timeout);
-   if (len < 0)
-      return len;
-   if (len < 2)
-      return -102;
-   len -= 2;                    // PN532 status and reponse status
-   if (*buf)
-      return -1000 - *buf;      // Bad status from PN532
-   if (buf[1] == 0xAF)
-   {                            // Additional frames
-      // TODO - may not be needed
+   {                            // Get the response
+      byte *p = data,
+         *e = data + max;
+      while (p < e)
+      {
+         int r = HAL (readResponse) (p, e - p, timeout),
+            i;
+         if (r < 0)
+            return r;
+         if (r < 2)
+            return -1000;
+         if (*p)
+            return -1000 - *p;  // Bad PN532 status
+         if (p == data)
+         {                      // First, copy back one byte
+            for (i = 0; i < r - 1; i++)
+               p[i] = p[i + 1];
+         } else
+         {                      // More data, move status and copy back 2 bytes
+            *data = p[1];       // status
+            for (i = 0; i < r - 2; i++)
+               p[i] = p[i + 2];
+         }
+         p += i;
+         if (*data != 0xAF || cmd == 0xAA || cmd == 0x1A || cmd == 0x0A)
+            break;
+         // Expect more data
+         temp[0] = 0x40;        // InDataExchange
+         temp[1] = Tg1;
+         temp[2] = 0xAF;        // Additional frame
+         if (HAL (writeCommand) (temp, 3))
+            return -101;
+      }
+      len = p - data;
    }
-   if (buf[1])
-   {
-      secure = false;
-      return -2000 - buf[1];    // Bad status from card
+   dump ("Rx(raw)", len, data);
+   // Post process response
+   if (*data && *data != 0x0C && *data != 0xAF)
+      return -2000 - *data;     // Bad status byte
+   if (!authenticated)
+      return len;               // Length
+   if (rxenc)
+   {                            // Decrypt and check
+      if ((len % 16) != 1)
+         return -999;           // Bad length
+      A.cbc_decrypt (data + 1, data + 1, (len - 1) / 16);
+      if (rxenc + 4 > len)
+         return -999;           // No space for CRC
+      unsigned int crc = data[rxenc] + (data[rxenc + 1] << 8) + (data[rxenc + 2] << 16) + (data[rxenc + 3] << 24);
+      data[rxenc] = data[0];    // CRC is of status at end
+      if (desfire_crc (rxenc, data + 1) != crc)
+         return -998;
+      dump ("Rx", len, data);
+      return rxenc;             // Logical length
    }
-   if (!len)
-      return len;
-   if (len & 15)
-      return -107;
-   A.cbc_decrypt (buf + 2, buf + 2, len / 16);
-   if (!rlen)
-      return len;               // Not checking CRC
-   // Check CRC
-   if (len < rlen + 4)
-      return -108;              // Too short
-   if (len > ((rlen + 4) | 15) + 1)
-      return -109;              // Too long
-   unsigned long crc = buf[rlen + 2] + (buf[rlen + 3] << 8) + (buf[rlen + 4] << 16) + (buf[rlen + 5] << 24);
-   buf[rlen + 2] = buf[1];      // Status on end
-   if (desfire_crc (rlen + 1, buf + 2) != crc)
-      return -110;              // Bad crc
+   // Check CMAC
+   if (len < 9)
+      return -999;              // No space for CMAC
+   len -= 8;
+   byte c1 = data[len];
+   data[len] = data[0];
+   desfire_cmac (temp, len, data + 1);
+   data[len] = c1;
+   if (memcmp (data + len, temp, 8))
+      return -997;
+   dump ("Rx", len, data);
    return len;
 }
 
 int
 PN532RevK::desfire (byte cmd, int len, byte * buf, unsigned int maxlen, String & err, int timeout)
-{
-   int l = desfire_tx (cmd, len, buf, timeout);
-   if (l < 0)
-      return l;
-   l = desfire_rx (maxlen, buf, timeout);
-   if (l < 0)
+{                               // Simple command, takes len (after command) and returns len (after status)
+   int l = desfire_dx (cmd, maxlen, buf, len + 1, 0, 0, timeout);
+   if (l < 1)
    {
       byte status = buf[1];
       sprintf_P ((char *) buf, "Failed cmd %02X status %02X (%d)", cmd, status, l);
       err = String ((char *) buf);
       buf[1] = status;
    }
-   return l;
+   return l + 1;
 }
 
 void
@@ -295,34 +335,28 @@ key_left (byte * p)
    p[15] = ((p[15] << 1) ^ x);
 }
 
-uint8_t PN532RevK::getID (String & id, String & err, unsigned int timeout)
+uint8_t
+PN532RevK::getID (String & id, String & err, unsigned int timeout)
 {                               // Return tag id
    //debug ("PN532 InListPassiveTarget");
    secure = false;
    id = String ();              // defaults
    err = String ();
    Tg1 = 0;
-   uint8_t
-      buf[64];
+   uint8_t buf[64];
    buf[0] = 0x4A;               // InListPassiveTarget
    buf[1] = 1;                  // 1 tag
    buf[2] = 0;                  // 106 kbps type A (ISO/IEC14443 Type A)
    if (HAL (writeCommand) (buf, 3))
       return 0;
-   int
-      l = HAL (readResponse) (buf, sizeof (buf), timeout);
+   int l = HAL (readResponse) (buf, sizeof (buf), timeout);
    if (l < 6)
       return 0;
-   byte
-      tags = buf[0];
+   byte tags = buf[0];
    Tg1 = buf[1];
    if (tags < 1)
       return tags;
-   byte
-      cid[10],
-      cidlen;
-   boolean
-      cidsecure = false;
+   byte cid[10], cidlen;
    if (buf[5] > sizeof (cid))
    {                            // ID too big
       strcpy_P ((char *) buf, PSTR ("ID too long"));
@@ -336,64 +370,48 @@ uint8_t PN532RevK::getID (String & id, String & err, unsigned int timeout)
       buf[1] = aid[0];
       buf[2] = aid[1];
       buf[3] = aid[2];
-      l = desfire_tx (0x5A, 3, buf, timeout);
-      if (l < 0)
-         return 0;
-      l = desfire_rx (sizeof (buf), buf, timeout);
-      if (!l)
+      l = desfire_dx (0x5A, sizeof (buf), buf, 4, 0, 0, timeout);
+      if (l == 1)
       {                         // Application exists
          // AES exchange
-         buf[0] = 0x40;         // InDataExchange
-         buf[1] = Tg1;
-         buf[2] = 0xAA;         // AES Authenticate
-         buf[3] = 0x01;         // Key 1
-         if (HAL (writeCommand) (buf, 4))
-            return 0;
-         l = HAL (readResponse) (buf, sizeof (buf), timeout);
-         if (l != 18 || *buf || buf[1] != 0xAF)
+         buf[1] = 0x01;         // key 1
+         l = desfire_dx (0xAA, sizeof (buf), buf, 2, 0, 0, timeout);
+         if (l != 17 || *buf != 0xAF)
          {
-            byte
-               status = buf[1];
+            byte status = buf[1];
             sprintf_P ((char *) buf, PSTR ("AA1 fail %d %02X"), l, status);
             err = String ((char *) buf);
          } else
          {
             A.set_key (aes, 16);
             A.set_IV (0);
-            A.cbc_decrypt (buf + 2, sk2, 1);
+            A.cbc_decrypt (buf + 1, sk2, 1);
             ESP8266TrueRandom.memfill ((char *) sk1, 16);
-            memcpy ((void *) buf + 3, (void *) sk1, 16);
-            memcpy ((void *) buf + 3 + 16, (void *) sk2 + 1, 15);
-            buf[3 + 31] = sk2[0];
-            buf[0] = 0x40;      // InDataExchange
-            buf[1] = Tg1;
-            buf[2] = 0xAF;      // Additional frame
-            A.cbc_encrypt (buf + 3, buf + 3, 2);
-            if (HAL (writeCommand) (buf, 35))
-               return 0;
-            int
-               timed = micros ();
-            l = HAL (readResponse) (buf, sizeof (buf), timeout);
+            memcpy ((void *) buf + 1, (void *) sk1, 16);
+            memcpy ((void *) buf + 1 + 16, (void *) sk2 + 1, 15);
+            buf[1 + 31] = sk2[0];
+            A.cbc_encrypt (buf + 1, buf + 1, 2);
+            int timed = micros ();
+            l = desfire_dx (0xAF, sizeof (buf), buf, 33, 0, 0, timeout);
             timed = micros () - timed;
             if (timed > nfcslow)
             {
                sprintf_P ((char *) buf, PSTR ("AA2 slow %dus"), timed);
                err = String ((char *) buf);
-            } else if (l != 18 || *buf || buf[1])
+            } else if (l != 17 || *buf)
             {
-               byte
-                  status = buf[1];
-               sprintf_P ((char *) buf, PSTR ("AA2 fail %d %02X"), l, status);
+               sprintf_P ((char *) buf, PSTR ("AA2 fail %d %02X"), l, *buf);
                err = String ((char *) buf);
             } else
             {
-               A.cbc_decrypt (buf + 2, buf + 2, 1);
-               if (memcmp ((void *) buf + 2, sk1 + 1, 15) || buf[2 + 15] != sk1[0])
+               A.cbc_decrypt (buf + 1, buf + 1, 1);
+               if (memcmp ((void *) buf + 1, sk1 + 1, 15) || buf[1 + 15] != sk1[0])
                {
                   strcpy_P ((char *) buf, PSTR ("AA AES fail"));
                   err = String ((char *) buf);
                } else
                {
+                  authenticated = true;
                   memcpy ((void *) (sk1 + 4), (void *) (sk2 + 0), 4);   // Make a the new key
                   memcpy ((void *) (sk1 + 8), (void *) (sk1 + 12), 4);
                   memcpy ((void *) (sk1 + 12), (void *) (sk2 + 12), 4);
@@ -405,41 +423,33 @@ uint8_t PN532RevK::getID (String & id, String & err, unsigned int timeout)
                   memcpy ((void *) sk2, (void *) sk1, 16);
                   key_left (sk2);
                   A.set_IV (0); // ready to start CMAC messages
-                  secure = true;
                   // Get real ID
-                  l = desfire_tx (0x51, 0, buf, timeout);
-                  if (l < 0)
-                     return 0;
-                  l = desfire_rxd (sizeof (buf), buf, 7, timeout);
-                  if (l < 16)
+                  l = desfire_dx (0x51, sizeof (buf), buf, 1, 0, 8, timeout);
+                  if (l != 8)
                   {             // Failed (including failure of CRC check)
-                     secure = false;
-                     byte
-                        status = buf[1];
-                     sprintf_P ((char *) buf, PSTR ("51 fail %d %02X"), l, status);
+                     sprintf_P ((char *) buf, PSTR ("51 fail %d %02X"), l, *buf);
                      err = String ((char *) buf);
                   } else
                   {
-                     memcpy (cid, buf + 2, cidlen = 7);
-                     cidsecure = true;
+                     secure = true;
+                     memcpy (cid, buf + 1, cidlen = 7);
                   }
                }
             }
          }
       }
    }
+   if (*err.c_str ())
+      secure = false;
    if (cidlen)
    {                            // Set ID
-      int
-         n;
+      int n;
       for (n = 0; n < cidlen; n++)
          sprintf_P ((char *) buf + n * 2, PSTR ("%02X"), cid[n]);
-      if (cidsecure)
+      if (secure)
          strcpy_P ((char *) buf + n * 2, PSTR ("+"));   // Indicate that it is secure
       id = String ((char *) buf);
    }
-   if (*err.c_str ())
-      secure = false;
    return tags;
 }
 
@@ -475,19 +485,17 @@ PN532RevK::desfire_log (String & err, int timeout)
    return desfire (0xC7, 0, buf, sizeof (buf), err, timeout);
 }
 
-uint8_t PN532RevK::data (uint8_t txlen, uint8_t * tx, uint8_t & rxlen, uint8_t * rx, unsigned int timeout)
+uint8_t
+PN532RevK::data (uint8_t txlen, uint8_t * tx, uint8_t & rxlen, uint8_t * rx, unsigned int timeout)
 {                               // Data exchange, fills in data with status byte
-   uint8_t
-      rxspace = rxlen;
+   uint8_t rxspace = rxlen;
    rxlen = 0;
    if (!Tg1)
       return 0xFF;              // No tag
-   uint8_t
-      buf[2];
+   uint8_t buf[2];
    buf[0] = 0x40;               // InDataExchange
    buf[1] = Tg1;
-   int
-      len;
+   int len;
    if (HAL (writeCommand) (buf, 2, tx, txlen) || (len = HAL (readResponse) (rx, rxspace, timeout)) < 1)
       return 0xFF;
    rxlen = len;
@@ -508,24 +516,22 @@ PN532RevK::release (unsigned int timeout)
    return buf[0];
 }
 
-uint8_t PN532RevK::target (unsigned int timeout)
+uint8_t
+PN532RevK::target (unsigned int timeout)
 {                               // Acting as a target with NDEF crap
    if (Tg1)
       release (timeout);
-   uint8_t
-      buf[38],
-      n;
+   uint8_t buf[38], n;
    for (n = 0; n < sizeof (buf); n++)
       buf[n] = 0;
    buf[0] = 0x8C;               // TgInitAsTarget
    buf[1] = 0x05;               // PICC+passive
-   uint32_t
-      c = ESP.getChipId ();
+   uint32_t c = ESP.getChipId ();
    buf[4] = (c >> 16);          // Mifare NFCID1
    buf[5] = (c >> 8);
    buf[6] = c;
    buf[7] = 0x20;               // Mifare SEL_RES (ISO/IEC14443-4 PICC emulation)
-// TODO way more shit to code here
+   // TODO way more shit to code here
 }
 
 void
