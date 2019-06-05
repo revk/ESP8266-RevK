@@ -170,8 +170,7 @@ PN532RevK::desfire_cmac (byte cmacout[16], unsigned int len, byte * data)
    A.cbc_encrypt (cmacout, cmacout, 1);
 }
 
-#define MAXTX 33                // Not sure what it should be - but why not
-
+#define MAXTX 55
 // DESFire data exchange, including encryption and CMAC and multi-part messages
 // See include file for details description
 int
