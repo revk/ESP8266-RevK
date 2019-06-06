@@ -5,7 +5,7 @@
 #include <ESP8266TrueRandom.h>
 
 #define HAL(func)   (_interface->func)
-#define nfcslow	50000           // Max response time for AES handshake, us
+#define	nfctimeout	50     // ms response (help ensure no man-in-middle relay
 
 #ifdef REVKDEBUG
 void
@@ -63,7 +63,7 @@ PN532RevK::begin (unsigned int timeout)
 #if 1
    buf[0] = 0x32;               // RFConfiguration
    buf[1] = 0x04;               // MaxRtyCOM
-   buf[2] = 3;                  // Retries (default 0)
+   buf[2] = 1;                  // Retries (default 0)
    if (HAL (writeCommand) (buf, 3) || HAL (readResponse) (buf, sizeof (buf), timeout) < 0)
       return 0;
 #endif
@@ -400,83 +400,80 @@ uint8_t PN532RevK::getID (String & id, String & err, unsigned int timeout)
       buf[1] = aid[0];
       buf[2] = aid[1];
       buf[3] = aid[2];
-      l = desfire_dx (0x5A, sizeof (buf), buf, 4, 0, 0, timeout);
+      int
+         timed = micros ();
+      l = desfire_dx (0x5A, sizeof (buf), buf, 4, 0, 0, nfctimeout);
+      timed = micros () - timed;
+      if (l == PN532_TIMEOUT)
+         return 0;              // Try again
       if (l == 1)
       {                         // Application exists
-#if 0
-         // Get Key Version - we should not have to do this, but trying auth right away seems to cause timeout problems
+         // AES exchange
          buf[1] = 0x01;         // key 1
-         l = desfire_dx (0x64, sizeof (buf), buf, 2, 0, 0, timeout);
-         if (l == 2)
-#endif
+         timed = micros ();
+         l = desfire_dx (0xAA, sizeof (buf), buf, 2, 0, 0, nfctimeout);
+         timed = micros () - timed;
+         if (l != 17 || *buf != 0xAF)
          {
-            // AES exchange
-            buf[1] = 0x01;      // key 1
-            l = desfire_dx (0xAA, sizeof (buf), buf, 2, 0, 0, timeout);
-            if (l != 17 || *buf != 0xAF)
+            byte
+               status = buf[1];
+            sprintf_P ((char *) buf, PSTR ("AA1 fail %d %02X %dus"), l, status, timed);
+            err = String ((char *) buf);
+            return 0;           // Retry, i.e. don't see this ID
+         }
+         A.set_key (aes, 16);
+         A.set_IV (0);
+         A.cbc_decrypt (buf + 1, sk2, 1);
+         ESP8266TrueRandom.memfill ((char *) sk1, 16);
+         memcpy ((void *) buf + 1, (void *) sk1, 16);
+         memcpy ((void *) buf + 1 + 16, (void *) sk2 + 1, 15);
+         buf[1 + 31] = sk2[0];
+         A.cbc_encrypt (buf + 1, buf + 1, 2);
+         timed = micros ();
+         l = desfire_dx (0xAF, sizeof (buf), buf, 33, 0, 0, nfctimeout);
+         timed = micros () - timed;
+#ifdef REVKDEBUG
+         Serial.printf ("AA time %u\n", timed);
+#endif
+         if (timed > nfctimeout * 1000)
+         {
+            sprintf_P ((char *) buf, PSTR ("AA2 slow %dus"), timed);
+            err = String ((char *) buf);
+         } else if (l != 17 || *buf)
+         {
+            sprintf_P ((char *) buf, PSTR ("AA2 fail %d %02X"), l, *buf);
+            err = String ((char *) buf);
+         } else
+         {
+            A.cbc_decrypt (buf + 1, buf + 1, 1);
+            if (memcmp ((void *) buf + 1, sk1 + 1, 15) || buf[1 + 15] != sk1[0])
             {
-               byte
-                  status = buf[1];
-               sprintf_P ((char *) buf, PSTR ("AA1 fail %d %02X"), l, status);
+               strcpy_P ((char *) buf, PSTR ("AA AES fail"));
                err = String ((char *) buf);
             } else
             {
-               A.set_key (aes, 16);
-               A.set_IV (0);
-               A.cbc_decrypt (buf + 1, sk2, 1);
-               ESP8266TrueRandom.memfill ((char *) sk1, 16);
-               memcpy ((void *) buf + 1, (void *) sk1, 16);
-               memcpy ((void *) buf + 1 + 16, (void *) sk2 + 1, 15);
-               buf[1 + 31] = sk2[0];
-               A.cbc_encrypt (buf + 1, buf + 1, 2);
-               int
-                  timed = micros ();
-               l = desfire_dx (0xAF, sizeof (buf), buf, 33, 0, 0, timeout);
-               timed = micros () - timed;
-#ifdef REVKDEBUG
-               Serial.printf ("AA time %u\n", timed);
-#endif
-               if (timed > nfcslow)
-               {
-                  sprintf_P ((char *) buf, PSTR ("AA2 slow %dus"), timed);
-                  err = String ((char *) buf);
-               } else if (l != 17 || *buf)
-               {
-                  sprintf_P ((char *) buf, PSTR ("AA2 fail %d %02X"), l, *buf);
+               authenticated = true;
+               memcpy ((void *) (sk1 + 4), (void *) (sk2 + 0), 4);      // Make a the new key
+               memcpy ((void *) (sk1 + 8), (void *) (sk1 + 12), 4);
+               memcpy ((void *) (sk1 + 12), (void *) (sk2 + 12), 4);
+               A.set_key (sk1, 16);     // Session key
+               A.set_IV (0);    // To work out the sub keys
+               memset ((void *) sk1, 0, 16);
+               A.cbc_encrypt (sk1, sk1, 1);
+               key_left (sk1);
+               memcpy ((void *) sk2, (void *) sk1, 16);
+               key_left (sk2);
+               A.set_IV (0);    // ready to start CMAC messages
+               // Get real ID
+               l = desfire_dx (0x51, sizeof (buf), buf, 1, 0, 8, nfctimeout);
+               if (l != 8)
+               {                // Failed (including failure of CRC check)
+                  sprintf_P ((char *) buf, PSTR ("51 fail %d %02X"), l, *buf);
                   err = String ((char *) buf);
                } else
                {
-                  A.cbc_decrypt (buf + 1, buf + 1, 1);
-                  if (memcmp ((void *) buf + 1, sk1 + 1, 15) || buf[1 + 15] != sk1[0])
-                  {
-                     strcpy_P ((char *) buf, PSTR ("AA AES fail"));
-                     err = String ((char *) buf);
-                  } else
-                  {
-                     authenticated = true;
-                     memcpy ((void *) (sk1 + 4), (void *) (sk2 + 0), 4);        // Make a the new key
-                     memcpy ((void *) (sk1 + 8), (void *) (sk1 + 12), 4);
-                     memcpy ((void *) (sk1 + 12), (void *) (sk2 + 12), 4);
-                     A.set_key (sk1, 16);       // Session key
-                     A.set_IV (0);      // To work out the sub keys
-                     memset ((void *) sk1, 0, 16);
-                     A.cbc_encrypt (sk1, sk1, 1);
-                     key_left (sk1);
-                     memcpy ((void *) sk2, (void *) sk1, 16);
-                     key_left (sk2);
-                     A.set_IV (0);      // ready to start CMAC messages
-                     // Get real ID
-                     l = desfire_dx (0x51, sizeof (buf), buf, 1, 0, 8, timeout);
-                     if (l != 8)
-                     {          // Failed (including failure of CRC check)
-                        sprintf_P ((char *) buf, PSTR ("51 fail %d %02X"), l, *buf);
-                        err = String ((char *) buf);
-                     } else
-                     {
-                        secure = true;
-                        memcpy (cid, buf + 1, cidlen = 7);
-                     }
-                  }
+                  secure = true;
+                  memcpy (cid, buf + 1, cidlen = 7);
                }
             }
          }
