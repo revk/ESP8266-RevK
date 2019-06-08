@@ -1,11 +1,12 @@
 #include "PN532_SPI.h"
+#include "PN532_HSU.h"
 #include "PN532RevK.h"
 #include "ESPRevK.h"
 #include "AESLib.h"
 #include <ESP8266TrueRandom.h>
 
 #define HAL(func)   (_interface->func)
-#define	nfctimeout	50     // ms response (help ensure no man-in-middle relay
+#define	nfctimeout	50      // ms response (help ensure no man-in-middle relay
 
 #ifdef REVKDEBUG
 void
@@ -26,18 +27,24 @@ PN532RevK::PN532RevK (PN532Interface & interface)
    _interface = &interface;
 }
 
-uint32_t
-PN532RevK::begin (unsigned int timeout)
+void PN532RevK::set_interface (PN532Interface & interface)
+{
+   _interface = &interface;
+}
+
+uint32_t PN532RevK::begin (byte p3, unsigned int timeout)
 {                               // Begin, and get s/w version (0=bad)
    debug ("PN532 GetFirmwareVersion");
    HAL (begin) ();
    HAL (wakeup) ();
 
-   uint8_t buf[8];
+   uint8_t
+      buf[8];
    buf[0] = 0x02;               // GetFirmwareVersion
    if (HAL (writeCommand) (buf, 1) || HAL (readResponse) (buf, sizeof (buf), timeout) < 4)
       return 0;
-   uint32_t ver = (buf[0] << 24) + (buf[1] << 16) + (buf[2] << 8) + buf[3];
+   uint32_t
+      ver = (buf[0] << 24) + (buf[1] << 16) + (buf[2] << 8) + buf[3];
    buf[0] = 0x32;               // RFConfiguration
    buf[1] = 5;                  // Config item 5 (MaxRetries)
    buf[2] = 0xFF;               // MxRtyATR (default = 0xFF)
@@ -54,7 +61,7 @@ PN532RevK::begin (unsigned int timeout)
    buf[0] = 0x08;               // WriteRegister
    buf[1] = 0xFF;               // P3CFGB
    buf[2] = 0xFD;               // P3CFGB
-   buf[3] = 0x03;               // P30/P31 push/pull
+   buf[3] = p3;             // Define output bits
    buf[4] = 0xFF;               // P3
    buf[5] = 0xB0;               // P3
    buf[6] = 0xFF;               // All high
@@ -91,11 +98,11 @@ PN532RevK::p3 (unsigned int timeout)
    return buf[0];
 }
 
-uint8_t
-PN532RevK::led (uint8_t led, unsigned int timeout)
+uint8_t PN532RevK::led (uint8_t led, unsigned int timeout)
 {                               // Set LED (GPIO bits)
    led |= 0x14;                 // P32 and P34 set as per Elechouse library?
-   uint8_t buf[3];
+   uint8_t
+      buf[3];
    buf[0] = 0x0E;               // WriteGPIO
    buf[1] = (0x80 | led);       // P3 set
    buf[2] = 0;                  // P7 unchanged
@@ -104,20 +111,20 @@ PN532RevK::led (uint8_t led, unsigned int timeout)
    return 0;
 }
 
-uint8_t PN532RevK::cardsPresent (unsigned int timeout)
+uint8_t
+PN532RevK::cardsPresent (unsigned int timeout)
 {                               // Return number of cards being handled, 0 if none or error
-   uint8_t
-      buf[10];
+   uint8_t buf[10];
    buf[0] = 0x04;               // GetGeneralStatus
    if (HAL (writeCommand) (buf, 1) || HAL (readResponse) (buf, sizeof (buf), timeout) < 5)
       return 0;
    return buf[0];
 }
 
-uint8_t
-PN532RevK::inField (unsigned int timeout)
+uint8_t PN532RevK::inField (unsigned int timeout)
 {                               // 0 if OK and card(s) in field still, else status
-   uint8_t buf[20];
+   uint8_t
+      buf[20];
    buf[0] = 0x00;               // Diagnose
    buf[1] = 6;                  // Test 6 Attention Request Test or ISO/IEC14443-4 card presence detection
    if (HAL (writeCommand) (buf, 2) || HAL (readResponse) (buf, sizeof (buf), timeout) < 1)
@@ -362,32 +369,28 @@ key_left (byte * p)
    p[15] = ((p[15] << 1) ^ x);
 }
 
-uint8_t PN532RevK::getID (String & id, String & err, unsigned int timeout)
+uint8_t
+PN532RevK::getID (String & id, String & err, unsigned int timeout)
 {                               // Return tag id
    //debug ("PN532 InListPassiveTarget");
    secure = false;
    id = String ();              // defaults
    err = String ();
    Tg1 = 0;
-   uint8_t
-      buf[64];
+   uint8_t buf[64];
    buf[0] = 0x4A;               // InListPassiveTarget
    buf[1] = 1;                  // 1 tag
    buf[2] = 0;                  // 106 kbps type A (ISO/IEC14443 Type A)
    if (HAL (writeCommand) (buf, 3))
       return 0;
-   int
-      l = HAL (readResponse) (buf, sizeof (buf), timeout);
+   int l = HAL (readResponse) (buf, sizeof (buf), timeout);
    if (l < 6)
       return 0;
-   byte
-      tags = buf[0];
+   byte tags = buf[0];
    Tg1 = buf[1];
    if (tags < 1)
       return tags;
-   byte
-      cid[10],
-      cidlen;
+   byte cid[10], cidlen;
    if (buf[5] > sizeof (cid))
    {                            // ID too big
       strcpy_P ((char *) buf, PSTR ("ID too long"));
@@ -400,8 +403,7 @@ uint8_t PN532RevK::getID (String & id, String & err, unsigned int timeout)
       buf[1] = aid[0];
       buf[2] = aid[1];
       buf[3] = aid[2];
-      int
-         timed = micros ();
+      int timed = micros ();
       l = desfire_dx (0x5A, sizeof (buf), buf, 4, 0, 0, nfctimeout);
       timed = micros () - timed;
       if (l == PN532_TIMEOUT)
@@ -415,8 +417,7 @@ uint8_t PN532RevK::getID (String & id, String & err, unsigned int timeout)
          timed = micros () - timed;
          if (l != 17 || *buf != 0xAF)
          {
-            byte
-               status = buf[1];
+            byte status = buf[1];
             sprintf_P ((char *) buf, PSTR ("AA1 fail %d %02X %dus"), l, status, timed);
             err = String ((char *) buf);
             return 0;           // Retry, i.e. don't see this ID
@@ -483,8 +484,7 @@ uint8_t PN532RevK::getID (String & id, String & err, unsigned int timeout)
       secure = false;
    if (cidlen)
    {                            // Set ID
-      int
-         n;
+      int n;
       for (n = 0; n < cidlen; n++)
          sprintf_P ((char *) buf + n * 2, PSTR ("%02X"), cid[n]);
       if (secure)
@@ -526,31 +526,29 @@ PN532RevK::desfire_log (String & err, int timeout)
    return desfire (0xC7, 0, buf, sizeof (buf), err, timeout);
 }
 
-uint8_t PN532RevK::data (uint8_t txlen, uint8_t * tx, uint8_t & rxlen, uint8_t * rx, unsigned int timeout)
+uint8_t
+PN532RevK::data (uint8_t txlen, uint8_t * tx, uint8_t & rxlen, uint8_t * rx, unsigned int timeout)
 {                               // Data exchange, fills in data with status byte
-   uint8_t
-      rxspace = rxlen;
+   uint8_t rxspace = rxlen;
    rxlen = 0;
    if (!Tg1)
       return 0xFF;              // No tag
-   uint8_t
-      buf[2];
+   uint8_t buf[2];
    buf[0] = 0x40;               // InDataExchange
    buf[1] = Tg1;
-   int
-      len;
+   int len;
    if (HAL (writeCommand) (buf, 2, tx, txlen) || (len = HAL (readResponse) (rx, rxspace, timeout)) < 1)
       return 0xFF;
    rxlen = len;
    return rx[0];
 }
 
-uint8_t PN532RevK::release (unsigned int timeout)
+uint8_t
+PN532RevK::release (unsigned int timeout)
 {
    if (!Tg1)
       return 0;                 // Released as not set
-   uint8_t
-      buf[2];
+   uint8_t buf[2];
    buf[0] = 0x52;               // InRelease
    buf[1] = Tg1;
    if (HAL (writeCommand) (buf, 2) || HAL (readResponse) (buf, sizeof (buf), timeout) < 1)
@@ -559,19 +557,17 @@ uint8_t PN532RevK::release (unsigned int timeout)
    return buf[0];
 }
 
-uint8_t PN532RevK::target (unsigned int timeout)
+uint8_t
+PN532RevK::target (unsigned int timeout)
 {                               // Acting as a target with NDEF crap
    if (Tg1)
       release (timeout);
-   uint8_t
-      buf[38],
-      n;
+   uint8_t buf[38], n;
    for (n = 0; n < sizeof (buf); n++)
       buf[n] = 0;
    buf[0] = 0x8C;               // TgInitAsTarget
    buf[1] = 0x05;               // PICC+passive
-   uint32_t
-      c = ESP.getChipId ();
+   uint32_t c = ESP.getChipId ();
    buf[4] = (c >> 16);          // Mifare NFCID1
    buf[5] = (c >> 8);
    buf[6] = c;

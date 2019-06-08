@@ -8,7 +8,8 @@ class PN532RevK
 {
   public:
     PN532RevK(PN532Interface &interface);
-    uint32_t begin(unsigned int timeout=1000); // Start, get version (0=bad)
+    void set_interface (PN532Interface & interface); // Change interface
+    uint32_t begin(byte p3=0,unsigned int timeout=1000); // Start, get version (0=bad)
     uint8_t cardsPresent(unsigned int timeout=100);	// return number of cards (0=error or none)
     uint8_t inField (unsigned int timeout=100);		// return if in field (0=OK, else status)
     uint8_t data(uint8_t txlen,uint8_t *tx,uint8_t &rxlen,uint8_t *rx,unsigned int timeout=1000); // Exchange data, return 0 if OK (status), rx has status byte at start
