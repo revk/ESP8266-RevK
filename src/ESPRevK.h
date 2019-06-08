@@ -1,6 +1,6 @@
 // RevK platform
 
-//#define REVKDEBUG               // If defined, does serial debug at 74880
+//#define REVKDEBUG	Serial              // If defined, does serial debug at 74880
 
 // This is a set of functions used in a number of projects by me, and a few friends
 // It sets up WiFi, and ensures reconnect
@@ -36,8 +36,8 @@
 //
 
 #ifdef REVKDEBUG
-#define debugf(fmt,...) do{Serial.printf_P(PSTR(fmt "\n"),__VA_ARGS__);Serial.flush();}while(0)
-#define debug(str) do{Serial.printf(PSTR("%S\n"),PSTR(str));Serial.flush();}while(0)
+#define debugf(fmt,...) do{REVKDEBUG.printf_P(PSTR(fmt "\n"),__VA_ARGS__);REVKDEBUG.flush();}while(0)
+#define debug(str) do{REVKDEBUG.printf(PSTR("%S\n"),PSTR(str));REVKDEBUG.flush();}while(0)
 #else
 #define debugf(...) do{}while(0)
 #define debug(...) do{}while(0)

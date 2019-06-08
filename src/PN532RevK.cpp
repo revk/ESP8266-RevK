@@ -27,7 +27,8 @@ PN532RevK::PN532RevK (PN532Interface & interface)
    _interface = &interface;
 }
 
-void PN532RevK::set_interface (PN532Interface & interface)
+void
+PN532RevK::set_interface (PN532Interface & interface)
 {
    _interface = &interface;
 }
@@ -61,7 +62,7 @@ uint32_t PN532RevK::begin (byte p3, unsigned int timeout)
    buf[0] = 0x08;               // WriteRegister
    buf[1] = 0xFF;               // P3CFGB
    buf[2] = 0xFD;               // P3CFGB
-   buf[3] = p3;             // Define output bits
+   buf[3] = p3;                 // Define output bits
    buf[4] = 0xFF;               // P3
    buf[5] = 0xB0;               // P3
    buf[6] = 0xFF;               // All high
@@ -381,9 +382,11 @@ PN532RevK::getID (String & id, String & err, unsigned int timeout)
    buf[0] = 0x4A;               // InListPassiveTarget
    buf[1] = 1;                  // 1 tag
    buf[2] = 0;                  // 106 kbps type A (ISO/IEC14443 Type A)
+   int timed = micros ();
    if (HAL (writeCommand) (buf, 3))
       return 0;
    int l = HAL (readResponse) (buf, sizeof (buf), timeout);
+   timed = micros () - timed;
    if (l < 6)
       return 0;
    byte tags = buf[0];
@@ -403,7 +406,7 @@ PN532RevK::getID (String & id, String & err, unsigned int timeout)
       buf[1] = aid[0];
       buf[2] = aid[1];
       buf[3] = aid[2];
-      int timed = micros ();
+      timed = micros ();
       l = desfire_dx (0x5A, sizeof (buf), buf, 4, 0, 0, nfctimeout);
       timed = micros () - timed;
       if (l == PN532_TIMEOUT)
@@ -489,6 +492,7 @@ PN532RevK::getID (String & id, String & err, unsigned int timeout)
          sprintf_P ((char *) buf + n * 2, PSTR ("%02X"), cid[n]);
       if (secure)
          strcpy_P ((char *) buf + n * 2, PSTR ("+"));   // Indicate that it is secure
+      //sprintf_P ((char *) buf + n * 2, PSTR (" (%uus)"), timed);        // TODO
       id = String ((char *) buf);
    }
    return tags;
@@ -562,7 +566,8 @@ PN532RevK::target (unsigned int timeout)
 {                               // Acting as a target with NDEF crap
    if (Tg1)
       release (timeout);
-   uint8_t buf[38], n;
+   uint8_t buf[38],
+     n;
    for (n = 0; n < sizeof (buf); n++)
       buf[n] = 0;
    buf[0] = 0x8C;               // TgInitAsTarget
