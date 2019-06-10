@@ -566,8 +566,7 @@ PN532RevK::target (unsigned int timeout)
 {                               // Acting as a target with NDEF crap
    if (Tg1)
       release (timeout);
-   uint8_t buf[38],
-     n;
+   uint8_t buf[38], n;
    for (n = 0; n < sizeof (buf); n++)
       buf[n] = 0;
    buf[0] = 0x8C;               // TgInitAsTarget

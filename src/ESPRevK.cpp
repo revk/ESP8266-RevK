@@ -37,6 +37,7 @@ static const char *appversion = NULL;   // System set from constructor as litera
 static int appnamelen = 0;      // May be truncated
 static long do_restart = 0;     // Do a restart in main loop cleanly
 static long do_upgrade = 0;     // Do an OTA upgrade
+static long do_mqttdisconnect = 0;      // Do an MQTT disconnect (and hence reconnect)
 static char mychipid[7];
 
 // Some defaults
@@ -276,7 +277,8 @@ domqttopen (boolean silent = false)
    pub (true, prefixstate, NULL, F ("1 %s"), appversion);
    unsigned int now = millis ();
    pub (prefixinfo, NULL,
-        F ("Up %d.%03d, flash %dKiB, W%d M%d, WiFi %s %d %02X:%02X:%02X:%02X:%02X:%02X RSSI %d Down %d.%03d"),
+        F ("%S %d.%03d, flash %dKiB, W%d M%d, WiFi %s %d %02X:%02X:%02X:%02X:%02X:%02X RSSI %d Down %d.%03d"),
+        mqttbackup ? PSTR ("Backup") : PSTR ("Up"),
         now / 1000, now % 1000, ESP.getFlashChipRealSize () / 1024, wificount, mqttcount, lastssid, lastchan,
         lastbssid[0], lastbssid[1], lastbssid[2], lastbssid[3], lastbssid[4], lastbssid[5], WiFi.RSSI (),
         wifidown / 1000, wifidown % 1000);
@@ -501,19 +503,13 @@ upgrade (int appnamelen, const char *appname)
 const char *
 localsetting (const char *name, const byte * value, size_t len)
 {                               // Apply a local setting (return PROGMEM tag)
-   if (mqtthost && !strcmp_P (name, PSTR ("mqtthost")) && (!len || strcmp (mqtthost, (char *) value)) && mqtt.connected ())
-   {
-      pub (true, prefixstate, NULL, F ("0 Config change"));
-      mqtt.disconnect ();
-      delay (100);
-   }
-#define s(n) do{const char*t=PSTR(#n);if(!strcmp_P(name,t)){n=(const char*)value;return t;}}while(0)
-#define n(n,d) do{const char*t=PSTR(#n);if(!strcmp_P(name,t)){n=(len?atoi((const char*)value):d);return t;}}while(0)
-#define f(n,l) do{const char*t=PSTR(#n);if(!strcmp_P(name,t)){if(len&&len!=l)return NULL;n=value;return t;}}while(0)
+#define s(n) do{const char*t=PSTR(#n);if(!strcasecmp_P(name,t)){n=(const char*)value;return t;}}while(0)
+#define n(n,d) do{const char*t=PSTR(#n);if(!strcasecmp_P(name,t)){n=(len?atoi((const char*)value):d);return t;}}while(0)
+#define f(n,l) do{const char*t=PSTR(#n);if(!strcasecmp_P(name,t)){if(len&&len!=l)return NULL;n=value;return t;}}while(0)
    revk_settings
 #undef f
-#undef s
 #undef n
+#undef s
       return NULL;
 }
 
@@ -635,8 +631,10 @@ setting_apply (const char *tag, const byte * value, size_t len)
       set = news;
    }
    settingsupdate = ((millis () + 1000) ? : 1);
-   if (settingsupdate && !strcasecmp_P (tag, PSTR ("hostname")))
-      do_restart = (millis ()? : 1);
+   if (!strcasecmp_P (tag, PSTR ("hostname")))
+      do_restart = (millis ()? : 1);    // Changed hostname
+   if (!strncasecmp_P (tag, PSTR ("mqtt"), 4))
+      do_mqttdisconnect = ((millis () + 1000) ? : 1);   // Changed MQTT settings
    return true;                 // Found(not changed)
 }
 
@@ -926,6 +924,15 @@ ESPRevK::loop ()
    // MQTT reconnnect
    if (mqtthost)
    {                            // We are doing MQTT
+      if (do_mqttdisconnect && (int) (do_mqttdisconnect - now) <= 0)
+      {
+         do_mqttdisconnect = 0;
+         if (mqttconnected)
+         {
+            pub (true, prefixstate, NULL, F ("0 Config change"));
+            mqtt.disconnect ();
+         }
+      }
       if (!mqtt.loop ())
       {                         // Not working
          const char *host = mqttbackup ? mqtthost2 : mqtthost;
