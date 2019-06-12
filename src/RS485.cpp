@@ -140,6 +140,15 @@ rs485_start_bit ()
 static void ICACHE_RAM_ATTR
 rs485_bit ()
 {                               // Interrupt for tx/rx per bit
+#if 1
+   // Bodge, delay startup regardless - crashy crashy for some reason.
+   static long init = 10000;
+   if (init)
+   {
+      init--;
+      return;
+   }
+#endif
    if (txrx)
    {                            // Rx
 #ifdef REVKDEBUG
@@ -154,7 +163,6 @@ rs485_bit ()
          rxidle++;
          if (rxidle > gap)
          {                      // end of rx
-            // TODO clash with app level
             if (rxpos)
             {
                if (rxsum != rxdata[rxpos - 1])
@@ -373,17 +381,17 @@ RS485::Rx (int max, byte data[])
       return 0;                 // Nothing ready
    rxdue++;
    if (rxdue != rxseq)
-      return -1;                // Missed one
+      return RS485MISSED;       // Missed one
    if (!rxlen)
       return 0;
    if (rxlen > max)
-      return -2;                // No space
+      return RS485TOOBIG;       // No space
    if (rxerr)
-      return -3;                // Bad rx
+      return RS485ERROR;        // Bad rx
    int p;
    for (p = 0; p < rxlen - 1; p++)
       data[p] = rxdata[p];
    if (rxpos || rxdue != rxseq)
-      return -1;                // Missed one whilst reading data!
+      return RS485MISSED;       // Missed one whilst reading data!
    return p;
 }

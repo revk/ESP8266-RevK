@@ -4,6 +4,9 @@
 
 #define RS485MAX	64	// Max message length
 #define RS485DEFGAP	20
+#define	RS485MISSED	-1
+#define	RS485ERROR	-2
+#define	RS485TOOBIG	-3
 
 class RS485 {
 public:
