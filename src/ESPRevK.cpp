@@ -414,6 +414,10 @@ loadsettings ()
 static int
 doupdate (char *url)
 {
+	// Ints upset stuff
+   ETS_GPIO_INTR_DISABLE ();
+   ETS_FRC1_INTR_DISABLE ();
+   TM1_EDGE_INT_DISABLE ();
    debugf ("Do update %s", url);
    int ret = 0;
    if (mqtt.connected ())
