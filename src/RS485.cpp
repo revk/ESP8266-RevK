@@ -38,9 +38,9 @@ static int de = -1;
 static int tx = -1;
 static int rx = -1;
 // Timings (in bits)
-static byte txpre = RS485DEFGAP;
-static byte txpost = RS485DEFGAP;
-static byte gap = RS485DEFGAP;
+static byte txpre = 1;
+static byte txpost = 1;
+static byte gap = 10;
 // Address on bus
 static int address = -1;
 // Baud rate
@@ -56,7 +56,7 @@ static byte txbit,
   txlen;
 static volatile byte txpos;
 static byte txdata[RS485MAX];
-static boolean rxerr;
+static int8_t rxerr;
 static unsigned int rxidle;
 static byte rxbit,
   rxbyte,
@@ -155,18 +155,15 @@ rs485_bit ()
       static boolean flip = 0;
       digitalWrite (0, rxbit & 1);
 #endif
-      int v = digitalRead (rx);
       if (!rxbit)
       {                         // Idle
-         if (!v)
-            rxerr = true;       // Should not happen - maybe break condition
          rxidle++;
          if (rxidle > gap)
          {                      // end of rx
             if (rxpos)
             {
                if (rxsum != rxdata[rxpos - 1])
-                  rxerr = 1;
+                  rxerr = RS485CHECKSUM;
                rxlen = rxpos;   // new message received
                rxpos = 0;
                if (address >= 0)
@@ -184,6 +181,7 @@ rs485_bit ()
          }
          return;
       }
+      int v = digitalRead (rx);
       rxbit--;
       if (rxbit == 9)
       {                         // Start bit
@@ -199,7 +197,7 @@ rs485_bit ()
       }
       // Stop bit
       if (!v)
-         rxerr = true;          // Missing stop bit
+         rxerr = RS485STOPBIT;          // Missing stop bit
       rxidle = 0;
       // Checksum logic
       if (!rxpos)
@@ -213,7 +211,7 @@ rs485_bit ()
       }
       // End of byte
       if (rxpos >= RS485MAX)
-         rxerr = true;
+         rxerr = RS485TOOBIG;
       else
          rxdata[rxpos++] = rxbyte;
       rs485_wait_start_bit ();
@@ -273,7 +271,7 @@ static void ICACHE_RAM_ATTR
 rs485_mode_rx ()
 {                               // Switch to rx mode
    rxidle = 0;
-   rxerr = false;               // Ready for new message
+   rxerr = 0;               // Ready for new message
    txpos = 0;
    rxlen = 0;
    if (tx == rx)
@@ -302,6 +300,7 @@ rs485_mode_tx ()
 
 RS485::RS485 (int setaddress, int setde, int settx, int setrx, int setbaud)
 {
+   SetTiming ();                // Defaults
    SetAddress (setaddress);
    SetBaud (setbaud);
    SetPins (setde, settx, setrx);
@@ -387,7 +386,7 @@ RS485::Rx (int max, byte data[])
    if (rxlen > max)
       return RS485TOOBIG;       // No space
    if (rxerr)
-      return RS485ERROR;        // Bad rx
+      return rxerr;        // Bad rx
    int p;
    for (p = 0; p < rxlen - 1; p++)
       data[p] = rxdata[p];
