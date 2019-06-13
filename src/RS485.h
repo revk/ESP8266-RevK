@@ -5,8 +5,9 @@
 #define RS485MAX	64
 #define	RS485MISSED	-1
 #define	RS485TOOBIG	-2
-#define	RS485STOPBIT	-3
-#define RS485CHECKSUM	-4
+#define	RS485STARTBIT	-3
+#define	RS485STOPBIT	-4
+#define RS485CHECKSUM	-5
 
 
 class RS485 {
