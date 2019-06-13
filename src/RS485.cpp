@@ -39,12 +39,11 @@
 #define TM_LEVEL_INT 		1       // level interrupt
 #define TM_EDGE_INT   		0       //edge interrupt
 
-//#define DEBUG_CLK     0       // Debug clock pin output
-
 //              Pins
-static int de = -1;             // Drive enable pin(often also Not Receive Enable)
-static int tx = -1;             // Tx pin
-static int rx = -1;             // Rx pin(can be same as Tx pin)
+static int8_t de = -1;          // Drive enable pin(often also Not Receive Enable)
+static int8_t tx = -1;          // Tx pin
+static int8_t rx = -1;          // Rx pin(can be same as Tx pin)
+static int8_t clk = -1;         // Debug clock
 // Settings
 static byte gap = 10;           // Gap after which we assume end of message (bits)
 static byte txpre = 1;          // Pre tx drive(high) (bits)
@@ -113,9 +112,8 @@ rs485_setup ()
          digitalWrite (tx, HIGH);
          pinMode (tx, OUTPUT);
       }
-#ifdef DEBUG_CLK
-      pinMode (DEBUG_CLK, OUTPUT);      // Debug clock output
-#endif
+      if (clk >= 0)
+         pinMode (clk, OUTPUT); // Debug clock output
       ETS_FRC_TIMER1_INTR_ATTACH (rs485_bit, NULL);
       RTC_REG_WRITE (FRC1_LOAD_ADDRESS, US_TO_RTC_TIMER_TICKS (rate));
       RTC_REG_WRITE (FRC1_CTRL_ADDRESS, FRC1_AUTO_LOAD | DIVDED_BY_16 | FRC1_ENABLE_TIMER | TM_EDGE_INT);
@@ -142,9 +140,8 @@ rs485_bit ()
       if (subbit--)
          return;
       subbit = 2;               // Three sub bits per bit
-#ifdef DEBUG_CLK
-      GPIO_REG_WRITE ((bit & 1) ? GPIO_OUT_W1TS_ADDRESS : GPIO_OUT_W1TC_ADDRESS, 1 << DEBUG_CLK);       // Debug clock output
-#endif
+      if (clk >= 0)
+         GPIO_REG_WRITE ((bit & 1) ? GPIO_OUT_W1TS_ADDRESS : GPIO_OUT_W1TC_ADDRESS, 1 << clk);  // Debug clock output
       if (!bit)
       {                         // Idle
          if (rxgap)
@@ -215,13 +212,12 @@ rs485_bit ()
    if (subbit--)
       return;
    subbit = 2;                  // Three sub bits per bit
-#ifdef DEBUG_CLK
+   if (clk >= 0)
    {
       static boolean flip = 0;
       flip = 1 - flip;
-      GPIO_REG_WRITE (flip ? GPIO_OUT_W1TS_ADDRESS : GPIO_OUT_W1TC_ADDRESS, 1 << DEBUG_CLK);    // Debug clock output
+      GPIO_REG_WRITE (flip ? GPIO_OUT_W1TS_ADDRESS : GPIO_OUT_W1TC_ADDRESS, 1 << clk);  // Debug clock output
    }
-#endif
    byte t = 1;
    if (txgap)
    {
@@ -323,16 +319,17 @@ RS485::SetAddress (byte setaddress, boolean setslave)
 }
 
 void
-RS485::SetPins (int setde, int settx, int setrx)
+RS485::SetPins (int8_t setde, int8_t settx, int8_t setrx, int8_t setclk)
 {
    de = setde;
    tx = settx;
    rx = setrx;
+   clk = setclk;
    rs485_setup ();
 }
 
 void
-RS485::SetTiming (int setgap, int settxpre, int settxpost)
+RS485::SetTiming (byte setgap, byte settxpre, byte settxpost)
 {
    gap = setgap;
    txpre = settxpre;

@@ -16,9 +16,9 @@ public:
 	~RS485();
 
 	void SetAddress(byte address,boolean slave);
-	void SetPins(int de=-1,int tx=-1,int rx=-1);
+	void SetPins(int8_t de=-1,int8_t tx=-1,int8_t rx=-1,int8_t clk=-1);
 	void SetBaud(int baud=9600);
-	void SetTiming(int gap=10,int txpre=50,int txpost=40); // Keypad pre is 5ms before and 4ms after
+	void SetTiming(byte gap=10,byte txpre=50,byte txpost=40); // Keypad pre is 5ms before and 4ms after
 	void Start(); // Start modem
 	void Stop();
 
