@@ -414,8 +414,6 @@ loadsettings ()
 static int
 doupdate (char *url)
 {
-   //ETS_FRC1_INTR_DISABLE ();
-   //TM1_EDGE_INT_DISABLE ();
    debugf ("Do update %s", url);
    int ret = 0;
    if (mqtt.connected ())
@@ -847,6 +845,7 @@ ESPRevK::loop ()
    unsigned long now = (millis ()? : 1);        // Use with care as wraps every 49 days
    if (do_restart && (int) (do_restart - now) <= 0)
    {
+      app_command ("restart", NULL, 0);
       debug ("Restart");
       settings_save ();
       if (mqtt.connected ())
@@ -864,6 +863,7 @@ ESPRevK::loop ()
    }
    if (do_upgrade && (int) (do_upgrade - now) <= 0)
    {
+      app_command ("restart", NULL, 0);
       upgrade (appnamelen, appname);
       return false;             // Uh
    }

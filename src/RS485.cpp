@@ -18,7 +18,7 @@
 // You can call Tx at any time, if a message is being sent you block until done.
 // Calling Tx as master causes send once ASAP
 // Calling Tx as slave sets the message to be sent in reply to any received message
-// As slave, if you call Tx fast enough after received message you can reply directly, else previously set tx is sent anyway
+// As slave, if you call Tx fast enough after received message you can reply directly, else previously set tx is sent anyway unless message starts 00 after address
 // Any received messages starting with your address byte are received and show as Available()
 // You can call Rx to get last message, error codes for missed messages or errors
 //
@@ -88,18 +88,16 @@ static void
 rs485_setup ()
 {
    //Set up interrupts
-   ETS_FRC1_INTR_DISABLE ();
-   TM1_EDGE_INT_DISABLE ();
-   txlen = 0;
-   rxlen = 0;
-   rxseq = 0;
-   rxdue = 0;
-   txhold = false;
-   txdue = false;
-   rxpos = 0;
-   txpos = 0;
    if (running && baud > 0 && rx >= 0 && tx >= 0 && de >= 0)
    {
+      txlen = 0;
+      rxlen = 0;
+      rxseq = 0;
+      rxdue = 0;
+      txhold = false;
+      txdue = false;
+      rxpos = 0;
+      txpos = 0;
       //Start interrupts
       debugf ("RS485 Baud %d rx %d tx %d de %d", baud, rx, tx, de);
       unsigned int rate = 1000000 / baud / 3;
@@ -120,6 +118,10 @@ rs485_setup ()
       TM1_EDGE_INT_ENABLE ();
       ETS_FRC1_INTR_ENABLE ();
       rs485_mode_rx ();
+   } else
+   {
+      ETS_FRC1_INTR_DISABLE ();
+      TM1_EDGE_INT_DISABLE ();
    }
 }
 
@@ -157,7 +159,7 @@ rs485_bit ()
                rxlen = rxpos;
                rxerrorreport = rxerr;
                rxseq++;
-               if (slave)
+               if (slave && rxdata[1])
                   txdue = true; // Send reply as we are slave
                rxpos = 0;       // ready for next message
             }
@@ -172,7 +174,7 @@ rs485_bit ()
          if (v)
          {                      // Missing start bit
             rxerr = RS485STARTBIT;
-            bit = 0; // Back to idle
+            bit = 0;            // Back to idle
          }
          return;
       }
@@ -196,7 +198,7 @@ rs485_bit ()
       {
          byte l = rxdata[rxpos - 1];
          if ((int) rxsum + l > 0xFF)
-            rxsum++; // 1's comp
+            rxsum++;            // 1's comp
          rxsum += l;
       }
       if (!rxpos && shift != address)
@@ -294,6 +296,8 @@ RS485::RS485 (byte setaddress, boolean slave, int setde, int settx, int setrx, i
 
 RS485::~RS485 ()
 {
+   if (!running)
+      return;
    running = false;
    rs485_setup ();
 }
@@ -301,6 +305,8 @@ RS485::~RS485 ()
 void
 RS485::Start ()
 {
+   if (running)
+      return;
    running = true;
    rs485_setup ();
 }
@@ -308,6 +314,8 @@ RS485::Start ()
 void
 RS485::Stop ()
 {
+   if (!running)
+      return;
    running = false;
    rs485_setup ();
 }
@@ -317,12 +325,13 @@ RS485::SetAddress (byte setaddress, boolean setslave)
 {
    address = setaddress;
    slave = setslave;
-   rs485_setup ();
 }
 
 void
 RS485::SetPins (int8_t setde, int8_t settx, int8_t setrx, int8_t setclk)
 {
+   if (de == setde && tx == settx && rx == setrx && clk == setclk)
+      return;
    de = setde;
    tx = settx;
    rx = setrx;
@@ -338,10 +347,11 @@ RS485::SetTiming (byte setgap, byte settxpre, byte settxpost)
    txpost = settxpost;
 }
 
-
 void
 RS485::SetBaud (int setbaud)
 {
+   if (baud == setbaud)
+      return;
    baud = setbaud;
    rs485_setup ();
 }
@@ -366,10 +376,10 @@ RS485::Tx (int len, byte data[])
    {
       txdata[p] = data[p];
       if ((int) c + data[p] > 0xFF)
-         c++; // 1 's comp
+         c++;                   // 1 's comp
       c += data[p];
    }
-   txdata[p++] = c; // Checksum
+   txdata[p++] = c;             // Checksum
    txlen = p;
    if (!slave)
       txdue = true;             // Send now (if slave we send when polled)
