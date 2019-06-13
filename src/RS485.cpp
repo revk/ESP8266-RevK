@@ -172,13 +172,15 @@ rs485_bit ()
          if (v)
          {                      // Missing start bit
             rxerr = RS485STARTBIT;
-            bit = 0;
+            bit = 0; // Back to idle
          }
          return;
       }
       if (bit)
       {                         // Shift in
-         shift = (shift >> 1) | (v ? 0x80 : 0);
+         shift >>= 1;
+         if (v)
+            shift |= 0x80;
          return;
       }
       if (!rxpos)
@@ -194,7 +196,7 @@ rs485_bit ()
       {
          byte l = rxdata[rxpos - 1];
          if ((int) rxsum + l > 0xFF)
-            rxsum++;
+            rxsum++; // 1's comp
          rxsum += l;
       }
       if (!rxpos && shift != address)
@@ -357,18 +359,17 @@ RS485::Tx (int len, byte data[])
       return;
    txhold = true;               // Stop sending starting whilst we are loading
    while (txpos)
-      delay (1);                // Don 't overwrite whilst sending
+      delay (1);                // Don't overwrite whilst sending - block until sent
    byte c = 0xAA;
    int p;
    for (p = 0; p < len; p++)
    {
       txdata[p] = data[p];
       if ((int) c + data[p] > 0xFF)
-         c++;
-      //1 's comp
+         c++; // 1 's comp
       c += data[p];
    }
-   txdata[p++] = c;
+   txdata[p++] = c; // Checksum
    txlen = p;
    if (!slave)
       txdue = true;             // Send now (if slave we send when polled)
