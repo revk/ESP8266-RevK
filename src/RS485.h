@@ -12,15 +12,16 @@
 
 class RS485 {
 public:
-	RS485(int address=-1,int de=-1,int tx=-1,int rx=-1,int baud=9600);
+	RS485(byte address,boolean slave,int de=-1,int tx=-1,int rx=-1,int baud=9600);
 	~RS485();
 
-	void SetAddress(int address=-1);
+	void SetAddress(byte address,boolean slave);
 	void SetPins(int de=-1,int tx=-1,int rx=-1);
 	void SetBaud(int baud=9600);
 	void SetTiming(int gap=10,int txpre=50,int txpost=40); // Keypad pre is 5ms before and 4ms after
+	void Stop();
 
-	int available(); // If Rx available
+	int Available(); // If Rx available
 	void Tx(int len,byte data[]); // Message to send (sent right away if master)
 	int Rx(int max,byte data[]); // Get last message received
 

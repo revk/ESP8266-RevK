@@ -12,11 +12,17 @@
 // Combined Tx and Rx allowed, but switched to pull up before changing DE, so GPIO16 not suitable for combined Tx / Rx
 // Tx can typically be on any pin.
 // Suggested GPIO15 with 10 k to GND for DE, and GPIO13 for combined Tx / Rx
+// GPIO16 is not supported as we use fast GPIO register access directly and GPIO16 is special
 //
 // There is a single tx and single rx buffer(RS485MAX bytes long)
-// You pre - set tx as slave, and send as response to any incoming message.It can be change as needed(blocks if mid sending previous)
-// You can send tx as needed as master(set address - 1 for master)
-// Master rx all packets, slave only those that match address
+// You can call Tx at any time, if a message is being sent you block until done.
+// Calling Tx as master causes send once ASAP
+// Calling Tx as slave sets the message to be sent in reply to any received message
+// As slave, if you call Tx fast enough after received message you can reply directly, else previously set tx is sent anyway
+// Any received messages starting with your address byte are received and show as Available()
+// You can call Rx to get last message, error codes for missed messages or errors
+//
+// TODO - logically we could have multiple instances if all same Baud rate
 
 #include "ets_sys.h"
 #include "os_type.h"
@@ -32,7 +38,10 @@
 #define DIVDED_BY_256		8       //divided by 256
 #define TM_LEVEL_INT 		1       // level interrupt
 #define TM_EDGE_INT   		0       //edge interrupt
-                        //              Pins
+
+//#define DEBUG_CLK	0       // Debug clock pin output
+
+//              Pins
 static int de = -1;             // Drive enable pin(often also Not Receive Enable)
 static int tx = -1;             // Tx pin
 static int rx = -1;             // Rx pin(can be same as Tx pin)
@@ -40,26 +49,24 @@ static int rx = -1;             // Rx pin(can be same as Tx pin)
 static byte gap = 10;           // Gap after which we assume end of message (bits)
 static byte txpre = 1;          // Pre tx drive(high) (bits)
 static byte txpost = 1;         // Post tx drive(high) (bits)
-static int address = -1;        // First byte of message is target address.If this is >= 0 we are a slave on this address
-static int baud = 9600;         // Baud rate
+static byte address = 0;        // First byte of message is target address
+static boolean slave = false;   // If we are not master we reply when polled
+static unsigned int baud = 9600;        // Baud rate
 // Status
-static byte subbit;             // Sub bit count, 3 interrupts per bit for rx alignment
-static byte bit;		// Bit number
-static byte shift;		// Byte (shifting in/out)
 // Tx
 static boolean txrx;            // Mode, true for rx , false for tx //Tx
 static boolean txdue;           // We are due to send a message
 static boolean txhold;          // We are in app Tx call and need to hold of sending as copying to buffer
 static unsigned int txgap;      // We are sending pre / post drive
-static byte txlen;                        // The length of tx buf
+static byte txlen;              // The length of tx buf
 static volatile byte txpos;     // Position in tx buf we are sending(checked by app level)
 static byte txdata[RS485MAX];   // The tx message
 // Rx
 static boolean rxignore;        // This message is not for us so being ignored
 static int8_t rxerr,            // The current in progress message rx error
   rxerrorreport;                // The rxerror of the last stored message
-volatile byte rxpos;		// Where we are in rx buf
-static byte rxlen,                        // Length of last received mesage in rxbuf
+volatile byte rxpos;            // Where we are in rx buf
+static byte rxlen,              // Length of last received mesage in rxbuf
   rxdue,                        // The expected message sequence
   rxsum,                        // The current checksum
   rxgap;                        // The remaining end of message timeout
@@ -89,10 +96,8 @@ rs485_setup ()
    rxdue = 0;
    txhold = false;
    txdue = false;
-   subbit=0;
-   rxpos=0;
-   txpos=0;
-   bit=0;
+   rxpos = 0;
+   txpos = 0;
    if (baud > 0 && rx >= 0 && tx >= 0 && de >= 0)
    {
       //Start interrupts
@@ -101,14 +106,14 @@ rs485_setup ()
       //3 ticks per bit
       digitalWrite (de, LOW);
       pinMode (de, OUTPUT);
+      pinMode (rx, INPUT_PULLUP);
       if (tx != rx)
-      {
-         //Separate tx
-         digitalWrite (tx, LOW);
+      {                         // Separate tx
+         digitalWrite (tx, HIGH);
          pinMode (tx, OUTPUT);
       }
-#ifdef REVKDEBUG
-      pinMode (0, OUTPUT);
+#ifdef DEBUG_CLK
+      pinMode (DEBUG_CLK, OUTPUT);      // Debug clock output
 #endif
       ETS_FRC_TIMER1_INTR_ATTACH (rs485_bit, NULL);
       RTC_REG_WRITE (FRC1_LOAD_ADDRESS, US_TO_RTC_TIMER_TICKS (rate));
@@ -122,29 +127,22 @@ rs485_setup ()
 static void ICACHE_RAM_ATTR
 rs485_bit ()
 {                               // Interrupt for tx / rx per bit
-#if 1
-   // Bodge, delay startup regardless - crashy crashy for some reason.
-   static long init = 10000;
-   if (init)
-   {
-      init--;
-      return;
-   }
-#endif
+   static byte subbit = 0;      // Sub bit count, 3 interrupts per bit for rx alignment
+   static byte bit = 0;         // Bit number
+   static byte shift = 0;       // Byte (shifting in/out)
    if (txrx)
    {                            // Rx
-      int v = digitalRead (rx);
+      int v = (GPIO_REG_READ (GPIO_IN_ADDRESS) & (1 << rx));
       if (!v && !bit)
       {                         // Idle, and low, so this is start of start bit
-         subbit = 2;	// Centre of start bit, ish
+         subbit = 1;            // Centre of start bit (+/- 1/6 of a bit)
          bit = 10;
       }
-      if (--subbit)
+      if (subbit--)
          return;
-      subbit = 3;
-#ifdef REVKDEBUG
-      static boolean flip = 0;
-      digitalWrite (0, bit & 1);
+      subbit = 2;               // Three sub bits per bit
+#ifdef DEBUG_CLK
+      GPIO_REG_WRITE ((bit & 1) ? GPIO_OUT_W1TS_ADDRESS : GPIO_OUT_W1TC_ADDRESS, 1 << DEBUG_CLK);       // Debug clock output
 #endif
       if (!bit)
       {                         // Idle
@@ -161,8 +159,8 @@ rs485_bit ()
                rxlen = rxpos;
                rxerrorreport = rxerr;
                rxseq++;
-               if (address >= 0)
-                  txdue = true;
+               if (slave)
+                  txdue = true; // Send reply as we are slave
                rxpos = 0;       // ready for next message
             }
             if (txdue)
@@ -201,8 +199,8 @@ rs485_bit ()
             rxsum++;
          rxsum += l;
       }
-      if (!rxpos && address >= 0 && shift != address)
-         rxignore = true;       // We are slave, this is not addressed to us, ignore
+      if (!rxpos && shift != address)
+         rxignore = true;       // Not addressed to us, ignore
       if (rxignore)
          return;                // Not for us
       // End of byte
@@ -213,15 +211,15 @@ rs485_bit ()
       return;
    }
    // Tx
-   if (--subbit)
+   if (subbit--)
       return;
-   subbit = 3;
-#if 0
-#ifdef REVKDEBUG
-   static boolean flip = 0;
-   flip = 1 - flip;
-   digitalWrite (0, flip);
-#endif
+   subbit = 2;                  // Three sub bits per bit
+#ifdef DEBUG_CLK
+   {
+      static boolean flip = 0;
+      flip = 1 - flip;
+      GPIO_REG_WRITE (flip ? GPIO_OUT_W1TS_ADDRESS : GPIO_OUT_W1TC_ADDRESS, 1 << DEBUG_CLK);    // Debug clock output
+   }
 #endif
    byte t = 1;
    if (txgap)
@@ -264,49 +262,53 @@ rs485_bit ()
       } else
          txgap = txpost;        // End of message
    }
-   digitalWrite (tx, t);
+   GPIO_REG_WRITE (t ? GPIO_OUT_W1TS_ADDRESS : GPIO_OUT_W1TC_ADDRESS, 1 << tx);
 }
 
 static void ICACHE_RAM_ATTR
 rs485_mode_rx ()
-{ // Switch to rx mode
+{                               // Switch to rx mode
    if (tx == rx)
-      pinMode (rx, INPUT_PULLUP);
-   digitalWrite (de, LOW);
-   txrx = 1;                    // Rx mode
+      GPIO_REG_WRITE (GPIO_ENABLE_W1TC_ADDRESS, 1 << rx);       // Switch to input
+   GPIO_REG_WRITE (GPIO_OUT_W1TC_ADDRESS, 1 << de);     // DE low, for rx
+   txrx = true;                 // Rx mode
 }
 
 static void ICACHE_RAM_ATTR
 rs485_mode_tx ()
-{ // Switch to tx mode
-   digitalWrite (de, HIGH);
+{                               // Switch to tx mode
+   GPIO_REG_WRITE (GPIO_OUT_W1TS_ADDRESS, 1 << de);     // DE high, for tx
    if (tx == rx)
-   {
-      digitalWrite (tx, HIGH);
-      pinMode (tx, OUTPUT);
-   }
+      GPIO_REG_WRITE (GPIO_ENABLE_W1TS_ADDRESS, 1 << rx);       // Switch to output
    txgap = txpre;
    txdue = false;
-   txrx = 0;                    // Tx mode
+   txrx = false;                // Tx mode
 }
 
-RS485::RS485 (int setaddress, int setde, int settx, int setrx, int setbaud)
+RS485::RS485 (byte setaddress, boolean slave, int setde, int settx, int setrx, int setbaud)
 {
-   SetTiming (); // Defaults
-   SetAddress (setaddress);
+   SetTiming ();                // Defaults
+   SetAddress (setaddress, slave);
    SetBaud (setbaud);
    SetPins (setde, settx, setrx);
 }
 
 RS485::~RS485 ()
 {
-   SetBaud (-1);
+   SetBaud (0);
 }
 
 void
-RS485::SetAddress (int a)
+RS485::Stop ()
 {
-   address = a;
+   SetBaud (0);
+}
+
+void
+RS485::SetAddress (byte setaddress, boolean setslave)
+{
+   address = setaddress;
+   slave = setslave;
    rs485_setup ();
 }
 
@@ -336,19 +338,19 @@ RS485::SetBaud (int setbaud)
 }
 
 int
-RS485::available ()
-{ // If Rx available
+RS485::Available ()
+{                               // If Rx available
    return rxdue != rxseq;
 }
 
 void
 RS485::Tx (int len, byte data[])
-{ // Message to send(sent right away if master)
+{                               // Message to send(sent right away if master)
    if (len >= RS485MAX)
       return;
-   txhold = true; // Stop sending starting whilst we are loading
+   txhold = true;               // Stop sending starting whilst we are loading
    while (txpos)
-      delay (1); // Don 't overwrite whilst sending
+      delay (1);                // Don 't overwrite whilst sending
    byte c = 0xAA;
    int p;
    for (p = 0; p < len; p++)
@@ -361,29 +363,29 @@ RS485::Tx (int len, byte data[])
    }
    txdata[p++] = c;
    txlen = p;
-   if (address < 0)
-      txdue = true; // Send now(if slave we send when polled)
-   txhold = false; // Allow sending
+   if (!slave)
+      txdue = true;             // Send now (if slave we send when polled)
+   txhold = false;              // Allow sending
 }
 
 int
 RS485::Rx (int max, byte data[])
-{ // Get last message received
+{                               // Get last message received
    if (rxdue == rxseq)
-      return 0; // Nothing ready
+      return 0;                 // Nothing ready
    rxdue++;
    if (rxdue != rxseq)
-      return RS485MISSED; // Missed one
+      return RS485MISSED;       // Missed one
    if (!rxlen)
-      return 0;
-   if (rxlen > max)
-      return RS485TOOBIG; // No space
+      return 0;                 // Uh?
    if (rxerrorreport)
-      return rxerrorreport; // Bad rx
+      return rxerrorreport;     // Bad rx
+   if (rxlen > max)
+      return RS485TOOBIG;       // No space
    int p;
    for (p = 0; p < rxlen - 1; p++)
       data[p] = rxdata[p];
    if (rxpos || rxdue != rxseq)
-      return RS485MISSED; // Missed one whilst reading data !
+      return RS485MISSED;       // Missed one whilst reading data !
    return p;
 }
