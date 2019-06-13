@@ -19,6 +19,7 @@ public:
 	void SetPins(int de=-1,int tx=-1,int rx=-1);
 	void SetBaud(int baud=9600);
 	void SetTiming(int gap=10,int txpre=50,int txpost=40); // Keypad pre is 5ms before and 4ms after
+	void Start(); // Start modem
 	void Stop();
 
 	int Available(); // If Rx available

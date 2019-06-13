@@ -39,7 +39,7 @@
 #define TM_LEVEL_INT 		1       // level interrupt
 #define TM_EDGE_INT   		0       //edge interrupt
 
-//#define DEBUG_CLK	0       // Debug clock pin output
+//#define DEBUG_CLK     0       // Debug clock pin output
 
 //              Pins
 static int de = -1;             // Drive enable pin(often also Not Receive Enable)
@@ -51,6 +51,7 @@ static byte txpre = 1;          // Pre tx drive(high) (bits)
 static byte txpost = 1;         // Post tx drive(high) (bits)
 static byte address = 0;        // First byte of message is target address
 static boolean slave = false;   // If we are not master we reply when polled
+static boolean running = false; // Are we even running
 static unsigned int baud = 9600;        // Baud rate
 // Status
 // Tx
@@ -98,7 +99,7 @@ rs485_setup ()
    txdue = false;
    rxpos = 0;
    txpos = 0;
-   if (baud > 0 && rx >= 0 && tx >= 0 && de >= 0)
+   if (running && baud > 0 && rx >= 0 && tx >= 0 && de >= 0)
    {
       //Start interrupts
       debugf ("RS485 Baud %d rx %d tx %d de %d", baud, rx, tx, de);
@@ -295,13 +296,22 @@ RS485::RS485 (byte setaddress, boolean slave, int setde, int settx, int setrx, i
 
 RS485::~RS485 ()
 {
-   SetBaud (0);
+   running = false;
+   rs485_setup ();
+}
+
+void
+RS485::Start ()
+{
+   running = true;
+   rs485_setup ();
 }
 
 void
 RS485::Stop ()
 {
-   SetBaud (0);
+   running = false;
+   rs485_setup ();
 }
 
 void
