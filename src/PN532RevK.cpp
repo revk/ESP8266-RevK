@@ -371,7 +371,7 @@ key_left (byte * p)
 }
 
 uint8_t
-PN532RevK::getID (String & id, String & err, unsigned int timeout)
+PN532RevK::getID (String & id, String & err, unsigned int timeout, byte * bid)
 {                               // Return tag id
    //debug ("PN532 InListPassiveTarget");
    secure = false;
@@ -494,6 +494,13 @@ PN532RevK::getID (String & id, String & err, unsigned int timeout)
          strcpy_P ((char *) buf + n * 2, PSTR ("+"));   // Indicate that it is secure
       //sprintf_P ((char *) buf + n * 2, PSTR (" (%uus)"), timed);        // TODO
       id = String ((char *) buf);
+      if (bid)
+      {                         // Binary ID, padded with 0x00 to 10 character
+         for (n = 0; n < cidlen; n++)
+            bid[n] = bid[n];
+         for (; n < sizeof (cid); n++)
+            bid[n] = 0;
+      }
    }
    return tags;
 }

@@ -14,6 +14,7 @@
 // Suggested GPIO15 with 10 k to GND for DE, and GPIO13 for combined Tx / Rx
 // GPIO16 is not supported as we use fast GPIO register access directly and GPIO16 is special
 //
+// You set your address, 0xFF is treated as broadcast, you also set if you are slave or master
 // There is a single tx and single rx buffer(RS485MAX bytes long)
 // You can call Tx at any time, if a message is being sent you block until done.
 // Calling Tx as master causes send once ASAP
@@ -201,7 +202,7 @@ rs485_bit ()
             rxsum++;            // 1's comp
          rxsum += l;
       }
-      if (!rxpos && shift != address)
+      if (!rxpos && shift != address && address != 0xFF && shift != 0xFF)
          rxignore = true;       // Not addressed to us, ignore
       if (rxignore)
          return;                // Not for us
