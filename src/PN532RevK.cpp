@@ -6,7 +6,7 @@
 #include <ESP8266TrueRandom.h>
 
 #define HAL(func)   (_interface->func)
-#define	nfctimeout	50      // ms response (help ensure no man-in-middle relay
+#define	nfctimeout	100 // Note the system has an internal timeout too, see begin function
 
 #ifdef REVKDEBUG
 void
@@ -378,9 +378,9 @@ PN532RevK::getID (String & id, String & err, unsigned int timeout, byte * bid)
    id = String ();              // defaults
    err = String ();
    Tg1 = 0;
-   uint8_t buf[64];
+   uint8_t buf[128];
    buf[0] = 0x4A;               // InListPassiveTarget
-   buf[1] = 1;                  // 1 tag
+   buf[1] = 2;                  // 2 tags (we only report 1)
    buf[2] = 0;                  // 106 kbps type A (ISO/IEC14443 Type A)
    int timed = micros ();
    if (HAL (writeCommand) (buf, 3))
@@ -497,7 +497,7 @@ PN532RevK::getID (String & id, String & err, unsigned int timeout, byte * bid)
       if (bid)
       {                         // Binary ID, padded with 0x00 to 10 character
          for (n = 0; n < cidlen; n++)
-            bid[n] = bid[n];
+            bid[n] = cid[n];
          for (; n < sizeof (cid); n++)
             bid[n] = 0;
       }

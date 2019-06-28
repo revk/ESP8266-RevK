@@ -19,7 +19,7 @@
 // You can call Tx at any time, if a message is being sent you block until done.
 // Calling Tx as master causes send once ASAP
 // Calling Tx as slave sets the message to be sent in reply to any received message
-// As slave, if you call Tx fast enough after received message you can reply directly, else previously set tx is sent anyway unless message starts 00 after address
+// As slave, if you call Tx fast enough after received message you can reply directly, else previously set tx is sent anyway
 // Any received messages starting with your address byte are received and show as Available()
 // You can call Rx to get last message, error codes for missed messages or errors
 //
@@ -160,7 +160,7 @@ rs485_bit ()
                rxlen = rxpos;
                rxerrorreport = rxerr;
                rxseq++;
-               if (slave && rxdata[1])
+               if (slave)
                   txdue = true; // Send reply as we are slave
                rxpos = 0;       // ready for next message
             }
