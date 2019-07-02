@@ -41,13 +41,13 @@ PN532_SPI::wakeup ()
 
 
 
-int8_t PN532_SPI::writeCommand (const uint8_t * header, uint8_t hlen, const uint8_t * body, uint8_t blen)
+int8_t
+PN532_SPI::writeCommand (const uint8_t * header, uint8_t hlen, const uint8_t * body, uint8_t blen)
 {
    command = header[0];
    writeFrame (header, hlen, body, blen);
 
-   uint8_t
-      timeout = PN532_ACK_WAIT_TIME;
+   uint8_t timeout = PN532_ACK_WAIT_TIME;
    while (!isReady ())
    {
       delay (1);
@@ -66,10 +66,10 @@ int8_t PN532_SPI::writeCommand (const uint8_t * header, uint8_t hlen, const uint
    return 0;
 }
 
-int16_t PN532_SPI::readResponse (uint8_t buf[], uint8_t len, uint16_t timeout)
+int16_t
+PN532_SPI::readResponse (uint8_t buf[], uint8_t len, uint16_t timeout)
 {
-   uint16_t
-      time = 0;
+   uint16_t time = 0;
    while (!isReady ())
    {
       delay (1);
@@ -83,8 +83,7 @@ int16_t PN532_SPI::readResponse (uint8_t buf[], uint8_t len, uint16_t timeout)
    digitalWrite (_ss, LOW);
    delay (1);
 
-   int16_t
-      result;
+   int16_t result;
    do
    {
       write (DATA_READ);
@@ -99,16 +98,14 @@ int16_t PN532_SPI::readResponse (uint8_t buf[], uint8_t len, uint16_t timeout)
          break;
       }
 
-      uint8_t
-         length = read ();
+      uint8_t length = read ();
       if (0 != (uint8_t) (length + read ()))
       {                         // checksum of length
          result = PN532_INVALID_FRAME;
          break;
       }
 
-      uint8_t
-         cmd = command + 1;     // response command
+      uint8_t cmd = command + 1;        // response command
       if (PN532_PN532TOHOST != read () || (cmd) != read ())
       {
          result = PN532_INVALID_FRAME;
@@ -132,8 +129,7 @@ int16_t PN532_SPI::readResponse (uint8_t buf[], uint8_t len, uint16_t timeout)
          break;
       }
 
-      uint8_t
-         sum = PN532_PN532TOHOST + cmd;
+      uint8_t sum = PN532_PN532TOHOST + cmd;
       for (uint8_t i = 0; i < length; i++)
       {
          buf[i] = read ();
@@ -143,8 +139,7 @@ int16_t PN532_SPI::readResponse (uint8_t buf[], uint8_t len, uint16_t timeout)
       }
       DMSG ('\n');
 
-      uint8_t
-         checksum = read ();
+      uint8_t checksum = read ();
       if (0 != (uint8_t) (sum + checksum))
       {
          DMSG ("checksum is not ok\n");
@@ -161,13 +156,13 @@ int16_t PN532_SPI::readResponse (uint8_t buf[], uint8_t len, uint16_t timeout)
    return result;
 }
 
-boolean PN532_SPI::isReady ()
+boolean
+PN532_SPI::isReady ()
 {
    digitalWrite (_ss, LOW);
 
    write (STATUS_READ);
-   uint8_t
-      status = read () & 1;
+   uint8_t status = read () & 1;
    digitalWrite (_ss, HIGH);
    return status;
 }
@@ -216,13 +211,12 @@ PN532_SPI::writeFrame (const uint8_t * header, uint8_t hlen, const uint8_t * bod
    DMSG ('\n');
 }
 
-int8_t PN532_SPI::readAckFrame ()
+int8_t
+PN532_SPI::readAckFrame ()
 {
-   const uint8_t
-   PN532_ACK[] = { 0, 0, 0xFF, 0, 0xFF, 0 };
+   const uint8_t PN532_ACK[] = { 0, 0, 0xFF, 0, 0xFF, 0 };
 
-   uint8_t
-   ackBuf[sizeof (PN532_ACK)];
+   uint8_t ackBuf[sizeof (PN532_ACK)];
 
    digitalWrite (_ss, LOW);
    delay (1);

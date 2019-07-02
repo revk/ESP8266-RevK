@@ -37,7 +37,8 @@ PN532_HSU::wakeup ()
 
 }
 
-int8_t PN532_HSU::writeCommand (const uint8_t * header, uint8_t hlen, const uint8_t * body, uint8_t blen)
+int8_t
+PN532_HSU::writeCommand (const uint8_t * header, uint8_t hlen, const uint8_t * body, uint8_t blen)
 {
 
     /** dump serial buffer */
@@ -46,8 +47,7 @@ int8_t PN532_HSU::writeCommand (const uint8_t * header, uint8_t hlen, const uint
       DMSG ("Dump serial buffer: ");
       while (_serial->available ())
       {
-         uint8_t
-            ret = _serial->read ();
+         uint8_t ret = _serial->read ();
          DMSG_HEX (ret);
       }
    }
@@ -58,14 +58,12 @@ int8_t PN532_HSU::writeCommand (const uint8_t * header, uint8_t hlen, const uint
    _serial->write (PN532_STARTCODE1);
    _serial->write (PN532_STARTCODE2);
 
-   uint8_t
-      length = hlen + blen + 1; // length of data field: TFI + DATA
+   uint8_t length = hlen + blen + 1;    // length of data field: TFI + DATA
    _serial->write (length);
    _serial->write (~length + 1);        // checksum of length
 
    _serial->write (PN532_HOSTTOPN532);
-   uint8_t
-      sum = PN532_HOSTTOPN532;  // sum of TFI + DATA
+   uint8_t sum = PN532_HOSTTOPN532;     // sum of TFI + DATA
 
    DMSG ("\nWrite: ");
 
@@ -85,18 +83,17 @@ int8_t PN532_HSU::writeCommand (const uint8_t * header, uint8_t hlen, const uint
       DMSG_HEX (body[i]);
    }
 
-   uint8_t
-      checksum = ~sum + 1;      // checksum of TFI + DATA
+   uint8_t checksum = ~sum + 1; // checksum of TFI + DATA
    _serial->write (checksum);
    _serial->write (PN532_POSTAMBLE);
 
    return readAckFrame ();
 }
 
-int16_t PN532_HSU::readResponse (uint8_t buf[], uint8_t len, uint16_t timeout)
+int16_t
+PN532_HSU::readResponse (uint8_t buf[], uint8_t len, uint16_t timeout)
 {
-   uint8_t
-      tmp[3];
+   uint8_t tmp[3];
 
    DMSG ("\nRead:  ");
 
@@ -113,8 +110,7 @@ int16_t PN532_HSU::readResponse (uint8_t buf[], uint8_t len, uint16_t timeout)
    }
 
     /** receive length and check */
-   uint8_t
-      length[2];
+   uint8_t length[2];
    if (receive (length, 2, 2) != 2)
       return PN532_TIMEOUT;
 
@@ -129,8 +125,7 @@ int16_t PN532_HSU::readResponse (uint8_t buf[], uint8_t len, uint16_t timeout)
       return PN532_NO_SPACE;
 
     /** receive command byte */
-   uint8_t
-      cmd = command + 1;        // response command
+   uint8_t cmd = command + 1;   // response command
    if (receive (tmp, 2, 2) != 2)
       return PN532_TIMEOUT;
 
@@ -143,8 +138,7 @@ int16_t PN532_HSU::readResponse (uint8_t buf[], uint8_t len, uint16_t timeout)
    if (receive (buf, length[0], 2) != length[0])
       return PN532_TIMEOUT;
 
-   uint8_t
-      sum = PN532_PN532TOHOST + cmd;
+   uint8_t sum = PN532_PN532TOHOST + cmd;
    for (uint8_t i = 0; i < length[0]; i++)
       sum += buf[i];
 
@@ -161,12 +155,11 @@ int16_t PN532_HSU::readResponse (uint8_t buf[], uint8_t len, uint16_t timeout)
    return length[0];
 }
 
-int8_t PN532_HSU::readAckFrame ()
+int8_t
+PN532_HSU::readAckFrame ()
 {
-   const uint8_t
-   PN532_ACK[] = { 0, 0, 0xFF, 0, 0xFF, 0 };
-   uint8_t
-   ackBuf[sizeof (PN532_ACK)];
+   const uint8_t PN532_ACK[] = { 0, 0, 0xFF, 0, 0xFF, 0 };
+   uint8_t ackBuf[sizeof (PN532_ACK)];
 
    DMSG ("\nAck: ");
 
@@ -191,14 +184,12 @@ int8_t PN532_HSU::readAckFrame ()
            timeout --> time of receiving
     @retval number of received bytes, 0 means no data received.
 */
-int8_t PN532_HSU::receive (uint8_t * buf, int len, uint16_t timeout)
+int8_t
+PN532_HSU::receive (uint8_t * buf, int len, uint16_t timeout)
 {
-   int
-      read_bytes = 0;
-   int
-      ret;
-   unsigned long
-      start_millis;
+   int read_bytes = 0;
+   int ret;
+   unsigned long start_millis;
 
    if (!timeout)
       timeout = 1000;           // Ensure we do give up eventually
@@ -208,7 +199,7 @@ int8_t PN532_HSU::receive (uint8_t * buf, int len, uint16_t timeout)
    while (!_serial->available ())
    {
       delay (1);                // Allow for wifi, etc, to work
-      if ((millis () - start_millis) >= timeout)
+      if (!_serial->available () && (millis () - start_millis) >= timeout)
          return PN532_TIMEOUT;
    }
 
