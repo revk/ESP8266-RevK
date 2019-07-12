@@ -77,6 +77,7 @@ s(prefixstate);         \
 s(prefixevent);         \
 s(prefixinfo);          \
 s(prefixerror);         \
+n(timezone,0);		\
 
 #include "Arduino.h"
 #include <ESP8266WiFi.h>

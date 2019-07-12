@@ -6,7 +6,7 @@
 #include <ESP8266TrueRandom.h>
 
 #define HAL(func)   (_interface->func)
-#define	nfctimeout	60      // Note the system has an internal timeout too, see begin function
+#define	nfctimeout	50      // Note the system has an internal timeout too, see begin function
 
 #ifdef REVKDEBUG
 void
@@ -385,7 +385,7 @@ PN532RevK::getID (String & id, String & err, unsigned int timeout, byte * bid)
    int timed = micros ();
    if (HAL (writeCommand) (buf, 3))
       return 0;
-   int l = HAL (readResponse) (buf, sizeof (buf), timeout); // Measured 48ms
+   int l = HAL (readResponse) (buf, sizeof (buf), timeout);     // Measured 48ms
    timed = micros () - timed;
    if (l < 6)
       return 0;
@@ -408,7 +408,7 @@ PN532RevK::getID (String & id, String & err, unsigned int timeout, byte * bid)
       buf[2] = aid[1];
       buf[3] = aid[2];
       timed = micros ();
-      l = desfire_dx (0x5A, sizeof (buf), buf, 4, 0, 0, nfctimeout); // Measured 11ms
+      l = desfire_dx (0x5A, sizeof (buf), buf, 4, 0, 0, nfctimeout);    // Measured 11ms
       timed = micros () - timed;
       if (l == PN532_TIMEOUT)
          return 0;              // Try again
@@ -418,6 +418,8 @@ PN532RevK::getID (String & id, String & err, unsigned int timeout, byte * bid)
          timed = micros ();
          buf[1] = 0x01;         // key 1
          l = desfire_dx (0x64, sizeof (buf), buf, 2, 0, 0, nfctimeout); // Measured 9ms
+         if (l == PN532_TIMEOUT)
+            return 0;           // Try again
          timed = micros () - timed;
 #ifdef REVKDEBUG
          Serial.printf ("64 time %u\n", timed);
@@ -427,7 +429,7 @@ PN532RevK::getID (String & id, String & err, unsigned int timeout, byte * bid)
             // AES exchange
             buf[1] = 0x01;      // key 1
             timed = micros ();
-            l = desfire_dx (0xAA, sizeof (buf), buf, 2, 0, 0, nfctimeout); // Measured 18ms
+            l = desfire_dx (0xAA, sizeof (buf), buf, 2, 0, 0, nfctimeout);      // Measured 18ms
             timed = micros () - timed;
             if (l != 17 || *buf != 0xAF)
             {
@@ -445,8 +447,8 @@ PN532RevK::getID (String & id, String & err, unsigned int timeout, byte * bid)
             buf[1 + 31] = sk2[0];
             A.cbc_encrypt (buf + 1, buf + 1, 2);
             timed = micros ();
-	    // Measured us taking 12ms
-            l = desfire_dx (0xAF, sizeof (buf), buf, 33, 0, 0, nfctimeout); // Measured 31ms
+            // Measured us taking 12ms
+            l = desfire_dx (0xAF, sizeof (buf), buf, 33, 0, 0, nfctimeout);     // Measured 31ms
             timed = micros () - timed;
 #ifdef REVKDEBUG
             Serial.printf ("AA time %u\n", timed);
@@ -481,7 +483,7 @@ PN532RevK::getID (String & id, String & err, unsigned int timeout, byte * bid)
                   key_left (sk2);
                   A.set_IV (0); // ready to start CMAC messages
                   // Get real ID
-                  l = desfire_dx (0x51, sizeof (buf), buf, 1, 0, 8, nfctimeout); // Measured 19ms
+                  l = desfire_dx (0x51, sizeof (buf), buf, 1, 0, 8, nfctimeout);        // Measured 19ms
                   if (l != 8)
                   {             // Failed (including failure of CRC check)
                      sprintf_P ((char *) buf, PSTR ("51 fail %d %02X"), l, *buf);
@@ -544,10 +546,10 @@ PN532RevK::desfire_log (String & err, int timeout)
    buf[3] = 0;
    buf[4] = 0;
    buf[5] = 0;
-   l = desfire (0x0C, 5, buf, sizeof (buf), err, timeout); // Measured 21ms
+   l = desfire (0x0C, 5, buf, sizeof (buf), err, timeout);      // Measured 21ms
    if (l < 0)
       return l;
-   return desfire (0xC7, 0, buf, sizeof (buf), err, timeout); // Measured 30ms
+   return desfire (0xC7, 0, buf, sizeof (buf), err, timeout);   // Measured 30ms
 }
 
 uint8_t

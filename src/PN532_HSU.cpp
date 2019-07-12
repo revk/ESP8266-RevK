@@ -42,7 +42,11 @@ PN532_HSU::wakeup ()
    _serial->write (0);
    _serial->write (0);
    _serial->write (0);
+   _serial->write (0);
+   _serial->write (0);
+   _serial->write (0);
    _serial->flush ();
+   delay (2);
    flush ();
 }
 

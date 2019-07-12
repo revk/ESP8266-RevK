@@ -816,12 +816,13 @@ ESPRevK::ESPRevK (const char *myappname, const char *myappversion, const char *m
    char host[100];
    snprintf_P (host, sizeof (host), PSTR ("%.*s-%s"), appnamelen, appname, hostname);
    debugf ("WiFi %s", host);
+   WiFi.persistent(false);
    WiFi.mode (WIFI_STA);
    wifi_station_set_hostname (host);
    WiFi.setAutoConnect (false); // On start
    WiFi.setAutoReconnect (false);       // On loss (we connect)
    wifidisconnecthandler = WiFi.onStationModeDisconnected (wifidisconnect);
-   sntp_set_timezone (0);       // UTC please
+   sntp_set_timezone (timezone/3600);
    if (ntphost)
       sntp_setservername (0, (char *) ntphost);
    WiFi.setSleepMode (WIFI_NONE_SLEEP); // We assume we have no power issues
@@ -905,12 +906,12 @@ ESPRevK::loop ()
    }
    if (WiFi.isConnected ())
       wifiok = now;
-   if (wifireset && !do_restart && (int) (now - wifiok) > wifireset * 1000)
+   if (wifireset && wifiok && !do_restart && (int) (now - wifiok) > wifireset * 1000)
       do_restart = now;         // No wifi, restart
    static long mqttok = 0;
    if (mqttconnected)
       mqttok = now;
-   if (mqttreset && !do_restart && (int) (now - mqttok) > mqttreset * 1000)
+   if (mqttreset && mqttok && !do_restart && (int) (now - mqttok) > mqttreset * 1000)
       do_restart = now;         // No mqtt, restart
    // More aggressive SNTP
    if (wificonnected && time (NULL) < 86400 && (int) (sntptry - now) <= 0)

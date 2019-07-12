@@ -70,7 +70,7 @@ class PN532RevK
 
     // DEFire Higher level functions
     // This gets the card ID as a string, but if aid is set it authenticates and gets ID and appends + to string
-    uint8_t getID(String &id,String &err,unsigned int timeout=1000,byte bid[10]=NULL);
+    uint8_t getID(String &id,String &err,unsigned int timeout=100,byte bid[10]=NULL);
     boolean secure; // If we have secure ID confirmed
     boolean aidset;			 // If we have an AID for secure use
     // Add a log record: chipID and timestamp, 10 byte record to file 1, and credit value on file 2 by 1
