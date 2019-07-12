@@ -332,7 +332,7 @@ PN532RevK::desfire (byte cmd, int len, byte * buf, unsigned int maxlen, String &
    int l = desfire_dx (cmd, maxlen, buf, len + 1, 0, 0, timeout);
    if (l < 1)
    {
-      byte status = buf[1];
+      byte status = buf[0];
       sprintf_P ((char *) buf, "Failed cmd %02X status %02X (%d)", cmd, status, l);
       err = String ((char *) buf);
       buf[1] = status;
@@ -346,9 +346,7 @@ get_bcd_time (byte bcd[7])
    time_t now;
    struct tm *t;
    time (&now);
-   // TODO how to find actual local time??
-   //t = localtime (&now);
-   t = gmtime (&now);
+   t = localtime (&now);
 #define makebcd(x) ((x)/10*16+(x)%10)
    bcd[0] = makebcd ((t->tm_year + 1900) / 100);
    bcd[1] = makebcd ((t->tm_year + 1900) % 100);
@@ -550,6 +548,50 @@ PN532RevK::desfire_log (String & err, int timeout)
    if (l < 0)
       return l;
    return desfire (0xC7, 0, buf, sizeof (buf), err, timeout);   // Measured 30ms
+}
+
+uint32_t PN532RevK::desfire_fileset (String & err, int timeout)
+{                               // File numbers as bit map
+   uint8_t
+      buf[33];
+   int
+      l = desfire (0x6F, 0, buf, sizeof (buf), err, timeout);
+   if (l < 0)
+      return 0;
+   uint32_t
+      f = 0;
+   while (l--)
+      if (buf[1 + l] < 32)
+         f |= (1 << buf[1 + l]);
+   return f;
+}
+
+int32_t
+PN532RevK::desfire_filesize (uint8_t fn, String & err, int timeout)
+{
+   uint8_t buf[20];
+   buf[1] = fn;
+   int l = desfire (0xF5, 1, buf, sizeof (buf), err, timeout);
+   if (l < 0)
+      return -1;
+   if (buf[1] == 2)
+      return 0;                 // Value file
+   return buf[5] + (buf[6] << 8) + (buf[7] << 16);      // File or record size
+}
+
+int32_t
+   PN532RevK::desfire_fileread (uint8_t fn, uint32_t offset, uint32_t len, uint32_t bufsize, byte * buf, String & err, int timeout)
+{                               // get file data (starts with status byte)
+   if (bufsize < 8)
+      return -1;
+   buf[1] = fn;
+   buf[2] = offset;
+   buf[3] = offset >> 8;
+   buf[4] = offset >> 16;
+   buf[5] = len;
+   buf[6] = len >> 8;
+   buf[7] = len >> 16;
+   return desfire (0xBD, 7, buf, bufsize, err, timeout);
 }
 
 uint8_t

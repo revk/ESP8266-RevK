@@ -75,6 +75,9 @@ class PN532RevK
     boolean aidset;			 // If we have an AID for secure use
     // Add a log record: chipID and timestamp, 10 byte record to file 1, and credit value on file 2 by 1
     int desfire_log (String &err,int timeout=0);
+    uint32_t desfire_fileset(String & err, int timeout=0); // Get file numbers (0-31) as bit map
+    int32_t desfire_filesize(uint8_t fn,String & err, int timeout=0); // get file size or record size
+    int32_t desfire_fileread(uint8_t fn, uint32_t offset, uint32_t len, uint32_t bufsize,byte *buf, String & err, int timeout=0); // get file data
 
   private:
     PN532Interface *_interface;
