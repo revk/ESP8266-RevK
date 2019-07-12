@@ -906,7 +906,7 @@ ESPRevK::loop ()
    }
    if (WiFi.isConnected ())
       wifiok = now;
-   if (wifireset && wifiok && !do_restart && (int) (now - wifiok) > wifireset * 1000)
+   if (wifireset && !do_restart && (int) (now - wifiok) > wifireset * 1000)
       do_restart = now;         // No wifi, restart
    static long mqttok = 0;
    if (mqttconnected)
