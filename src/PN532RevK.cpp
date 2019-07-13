@@ -573,7 +573,7 @@ PN532RevK::desfire_filesize (uint8_t fn, String & err, int timeout)
    buf[1] = fn;
    int l = desfire (0xF5, 1, buf, sizeof (buf), err, timeout);
    if (l < 0)
-      return -1;
+      return l;
    if (buf[1] == 2)
       return 0;                 // Value file
    return buf[5] + (buf[6] << 8) + (buf[7] << 16);      // File or record size
