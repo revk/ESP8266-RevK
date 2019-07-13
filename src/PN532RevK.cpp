@@ -8,6 +8,8 @@
 #define HAL(func)   (_interface->func)
 #define	nfctimeout	50      // Note the system has an internal timeout too, see begin function
 
+//#define	GETKEYVER // Get key version, will be needed when we do key roll over logic
+
 #ifdef REVKDEBUG
 void
 dump (const char *prefix, unsigned int len, const byte * data)
@@ -412,6 +414,7 @@ PN532RevK::getID (String & id, String & err, unsigned int timeout, byte * bid)
          return 0;              // Try again
       if (l == 1)
       {                         // Application exists
+#ifdef	GETKEYVER
          // Key ID
          timed = micros ();
          buf[1] = 0x01;         // key 1
@@ -423,6 +426,7 @@ PN532RevK::getID (String & id, String & err, unsigned int timeout, byte * bid)
          Serial.printf ("64 time %u\n", timed);
 #endif
          if (l == 2)
+#endif
          {
             // AES exchange
             buf[1] = 0x01;      // key 1
