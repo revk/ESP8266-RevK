@@ -35,6 +35,7 @@ class PN532RevK
     //  Note that cmd arg is for convenience and if non 0 is simply stored in data[0]
     //  If the command is long, it is split and sent using AF process
     //  If not authenticated the command is sent, plain
+    //  If authenticated and txenc is 0xFF, append CMAC to command
     //  If authenticated and txenc set, then it is sent encrypted
     //   - A CRC is added to the end (at txlen), adding 4 bytes
     //   - The command is padded as needed (up to 16 bytes)

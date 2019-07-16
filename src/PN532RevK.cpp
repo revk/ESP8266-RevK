@@ -198,7 +198,12 @@ PN532RevK::desfire_dx (byte cmd, unsigned int max, byte * data, unsigned int len
    // Pre process
    if (authenticated)
    {                            // We are authenticated
-      if (txenc)
+      if (txenc=0xFF)
+      { // Append CMAC
+         desfire_cmac (data+len, len, data);
+	 len+=8;
+      }
+      else if (txenc)
       {                         // Encrypted sending (updates IV)
          if (txenc + ((len + 4 - txenc) | 15) + 1 > max)
             return -999;
