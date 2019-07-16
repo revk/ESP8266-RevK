@@ -39,8 +39,6 @@ PN532_SPI::wakeup ()
    digitalWrite (_ss, HIGH);
 }
 
-
-
 int8_t PN532_SPI::writeCommand (const uint8_t * header, uint8_t hlen, const uint8_t * body, uint8_t blen)
 {
    command = header[0];
@@ -63,6 +61,7 @@ int8_t PN532_SPI::writeCommand (const uint8_t * header, uint8_t hlen, const uint
       DMSG ("Invalid ACK\n");
       return PN532_INVALID_ACK;
    }
+   lastsent=millis();
    return 0;
 }
 
@@ -70,6 +69,7 @@ int16_t PN532_SPI::readResponse (uint8_t buf[], uint8_t len, uint16_t timeout)
 {
    uint16_t
       time = 0;
+   lastsent=0;
    while (!isReady ())
    {
       delay (1);
@@ -236,4 +236,17 @@ int8_t PN532_SPI::readAckFrame ()
    digitalWrite (_ss, HIGH);
 
    return memcmp (ackBuf, PN532_ACK, sizeof (PN532_ACK));
+}
+
+uint8_t PN532_SPI::available()
+{
+	return isReady();
+}
+
+int32_t PN532_SPI::waiting()
+{
+	if(!lastsent)return 0;
+	int32_t w=millis()-lastsent;
+	if(w<0)w=1;
+	return w;
 }

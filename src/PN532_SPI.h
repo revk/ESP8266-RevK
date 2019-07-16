@@ -14,7 +14,13 @@ public:
     int8_t writeCommand(const uint8_t *header, uint8_t hlen, const uint8_t *body = 0, uint8_t blen = 0);
 
     int16_t readResponse(uint8_t buf[], uint8_t len, uint16_t timeout);
-    
+
+    // If a response is available to read
+    uint8_t available();
+
+    // The time we have been waiting for a response (0 if not waiting)
+    int32_t waiting();
+
 private:
     SPIClass* _spi;
     uint8_t   _ss;
@@ -31,6 +37,8 @@ private:
     inline uint8_t read() {
         return _spi->transfer(0);
     }; 
+
+    int32_t lastsent;
 };
 
 #endif

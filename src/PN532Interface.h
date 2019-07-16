@@ -50,6 +50,12 @@ public:
     *           <0      failed to read response
     */
     virtual int16_t readResponse(uint8_t buf[], uint8_t len, uint16_t timeout = 1000) = 0;
+
+    // If a response is available to read
+    virtual uint8_t available();
+
+    // The time we have been waiting for a response (0 if not waiting)
+    virtual int32_t waiting();
 };
 
 #endif

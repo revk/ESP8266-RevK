@@ -111,6 +111,7 @@ int8_t PN532_HSU::writeCommand (const byte * header, byte hlen, const byte * bod
    if ((c = read ()))
       return PN532_INVALID_ACK; // Bad postamble
 
+   lastsent=millis();
    return 0;                    // OK
 }
 
@@ -119,6 +120,7 @@ int16_t PN532_HSU::readResponse (byte buf[], byte len, uint16_t timeout)
    if (timeout <= 0)
       timeout = 1000;           // Always exit eventually
 
+   lastsent=0;
    int
       c;
    // Wait and consume 00 preambles
@@ -189,3 +191,18 @@ int16_t PN532_HSU::readResponse (byte buf[], byte len, uint16_t timeout)
 
    return l;
 }
+
+
+uint8_t PN532_HSU::available()
+{
+      return _serial->available ();
+}
+
+int32_t PN532_HSU::waiting()
+{
+        if(!lastsent)return 0;
+        int32_t w=millis()-lastsent;
+        if(w<0)w=1;
+        return w;
+}
+

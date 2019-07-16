@@ -67,10 +67,14 @@ class PN532RevK
     // Simplified (len and return are byte count after cmd/status)
     int desfire (byte cmd, int len, byte * buf, unsigned int maxlen, String & err, int timeout);
 
+    uint8_t available(); // A response is available
+    int32_t waiting(); // 0 if not waiting in response, else ms that we have been waiting
+
+    // This gets the card ID as a string, but if aid is set it authenticates and gets ID and appends + to string
+    int8_t ILPT(); // Sends an InListPassiveTarget, can be used before calling getID, which only sends if not waiting reply.
+    uint8_t getID(String &id,String &err,unsigned int timeout=100,byte bid[10]=NULL);
 
     // DEFire Higher level functions
-    // This gets the card ID as a string, but if aid is set it authenticates and gets ID and appends + to string
-    uint8_t getID(String &id,String &err,unsigned int timeout=100,byte bid[10]=NULL);
     boolean secure; // If we have secure ID confirmed
     boolean aidset;			 // If we have an AID for secure use
     // Add a log record: chipID and timestamp, 10 byte record to file 1, and credit value on file 2 by 1

@@ -254,7 +254,10 @@ PN532RevK::desfire_dx (byte cmd, unsigned int max, byte * data, unsigned int len
          *e = data + max;
       while (p < e)
       {
-         int r = HAL (readResponse) (p, e - p, timeout),
+         int l = e - p;
+         if (l > MAXTX)
+            l = MAXTX;
+         int r = HAL (readResponse) (p, l, timeout),
             i;
          if (r < 0)
             return r;
@@ -370,6 +373,28 @@ key_left (byte * p)
    p[15] = ((p[15] << 1) ^ x);
 }
 
+// If a response is available to read
+uint8_t PN532RevK::available()
+{
+	return _interface->available();
+}
+
+// The time we have been waiting for a response (0 if not waiting)
+int32_t PN532RevK::waiting()
+{
+	return _interface->waiting();
+}
+
+int8_t PN532RevK::ILPT()
+{
+   uint8_t buf[3];
+   buf[0] = 0x4A;               // InListPassiveTarget
+   buf[1] = 2;                  // 2 tags (we only report 1)
+   buf[2] = 0;                  // 106 kbps type A (ISO/IEC14443 Type A)
+   int timed = micros ();
+   return HAL (writeCommand) (buf, 3);
+}
+
 uint8_t
 PN532RevK::getID (String & id, String & err, unsigned int timeout, byte * bid)
 {                               // Return tag id
@@ -379,12 +404,8 @@ PN532RevK::getID (String & id, String & err, unsigned int timeout, byte * bid)
    err = String ();
    Tg1 = 0;
    uint8_t buf[128];
-   buf[0] = 0x4A;               // InListPassiveTarget
-   buf[1] = 2;                  // 2 tags (we only report 1)
-   buf[2] = 0;                  // 106 kbps type A (ISO/IEC14443 Type A)
-   int timed = micros ();
-   if (HAL (writeCommand) (buf, 3))
-      return 0;
+      int timed = micros ();
+   if(!waiting())ILPT(); // We need to ask for the response.
    int l = HAL (readResponse) (buf, sizeof (buf), timeout);     // Measured 48ms
    timed = micros () - timed;
    if (l < 6)
@@ -566,7 +587,7 @@ uint32_t PN532RevK::desfire_fileset (String & err, int timeout)
       f = 0;
    while (l--)
       if (buf[1 + l] < 32)
-         f |= (1 << buf[1 + l]);
+         f |= ((uint32_t)1 << buf[1 + l]);
    return f;
 }
 

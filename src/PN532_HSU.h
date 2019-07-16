@@ -15,6 +15,8 @@ public:
     void wakeup();
     virtual int8_t writeCommand(const byte *header, byte hlen, const byte *body = 0, byte blen = 0);
     int16_t readResponse(byte buf[], byte len, uint16_t timeout);
+    uint8_t available();
+    int32_t waiting();
     
 private:
     HardwareSerial* _serial;
@@ -22,6 +24,8 @@ private:
     
     void flush();
     int read();
+
+    int32_t lastsent;
 };
 
 #endif
