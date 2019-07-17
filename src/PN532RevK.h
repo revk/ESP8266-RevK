@@ -78,6 +78,7 @@ class PN532RevK
     // DEFire Higher level functions
     boolean secure; // If we have secure ID confirmed
     boolean aidset;			 // If we have an AID for secure use
+    byte nfcstatus,desfirestatus;	// Last status
     // Add a log record: chipID and timestamp, 10 byte record to file 1, and credit value on file 2 by 1
     int desfire_log (String &err,int timeout=0);
     uint32_t desfire_fileset(String & err, int timeout=0); // Get file numbers (0-31) as bit map

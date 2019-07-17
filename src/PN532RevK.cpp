@@ -88,6 +88,7 @@ uint32_t PN532RevK::begin (byte p3, unsigned int timeout)
 #endif
    // SetParameters - not necessary
    debugf ("PN532 GetFirmwareVersion=%08X", ver);
+   nfcstatus = 0;
    return ver;
 }
 
@@ -96,8 +97,9 @@ PN532RevK::p3 (unsigned int timeout)
 {                               // Return state of P3 GPIO
    uint8_t buf[3];
    buf[0] = 0x0C;               // ReadGPIO
-   if (HAL (writeCommand) (buf, 1) || HAL (readResponse) (buf, sizeof (buf), timeout) < 3)
+   if (HAL (writeCommand) (buf, 1) || HAL (readResponse) (buf, sizeof (buf), timeout) < 1)
       return -1;
+   nfcstatus = *buf;
    return buf[0];
 }
 
@@ -109,8 +111,9 @@ uint8_t PN532RevK::led (uint8_t led, unsigned int timeout)
    buf[0] = 0x0E;               // WriteGPIO
    buf[1] = (0x80 | led);       // P3 set
    buf[2] = 0;                  // P7 unchanged
-   if (HAL (writeCommand) (buf, 3) || HAL (readResponse) (buf, sizeof (buf), timeout) < 0)
+   if (HAL (writeCommand) (buf, 3) || HAL (readResponse) (buf, sizeof (buf), timeout) < 1)
       return 0xFF;
+   nfcstatus = *buf;
    return 0;
 }
 
@@ -119,8 +122,9 @@ PN532RevK::cardsPresent (unsigned int timeout)
 {                               // Return number of cards being handled, 0 if none or error
    uint8_t buf[10];
    buf[0] = 0x04;               // GetGeneralStatus
-   if (HAL (writeCommand) (buf, 1) || HAL (readResponse) (buf, sizeof (buf), timeout) < 5)
+   if (HAL (writeCommand) (buf, 1) || HAL (readResponse) (buf, sizeof (buf), timeout) < 1)
       return 0;
+   nfcstatus = *buf;
    return buf[0];
 }
 
@@ -132,6 +136,7 @@ uint8_t PN532RevK::inField (unsigned int timeout)
    buf[1] = 6;                  // Test 6 Attention Request Test or ISO/IEC14443-4 card presence detection
    if (HAL (writeCommand) (buf, 2) || HAL (readResponse) (buf, sizeof (buf), timeout) < 1)
       return 0xFF;
+   nfcstatus = *buf;
    return buf[0];               // Status
 }
 
@@ -241,6 +246,8 @@ PN532RevK::desfire_dx (byte cmd, unsigned int max, byte * data, unsigned int len
             int r = HAL (readResponse) (temp, 3, timeout);
             if (r < 0)
                return r;
+            if (r)
+               nfcstatus = *temp;
             if (r < 2)
             {
                dump ("Rx(raw)", r, temp);
@@ -265,6 +272,8 @@ PN532RevK::desfire_dx (byte cmd, unsigned int max, byte * data, unsigned int len
             i;
          if (r < 0)
             return r;
+         if (r)
+            nfcstatus = *p;
          if (r < 2)
          {
             dump ("Rx(raw)", r, p);
@@ -296,6 +305,7 @@ PN532RevK::desfire_dx (byte cmd, unsigned int max, byte * data, unsigned int len
    }
    dump ("Rx(raw)", len, data);
    // Post process response
+   desfirestatus = *data;
    if (*data && *data != 0xAF)
    {
       authenticated = false;
@@ -415,12 +425,16 @@ PN532RevK::getID (String & id, String & err, unsigned int timeout, byte * bid)
       ILPT ();                  // We need to ask for the response.
    int l = HAL (readResponse) (buf, sizeof (buf), timeout);     // Measured 48ms
    timed = micros () - timed;
+   if (l < 1)
+      return 0;
+   desfirestatus = 0;
    if (l < 6)
       return 0;
    byte tags = buf[0];
    Tg1 = buf[1];
    if (tags < 1)
       return tags;
+   nfcstatus = 0;
    byte cid[10], cidlen;
    if (buf[5] > sizeof (cid))
    {                            // ID too big
@@ -648,6 +662,7 @@ PN532RevK::data (uint8_t txlen, uint8_t * tx, uint8_t & rxlen, uint8_t * rx, uns
    int len;
    if (HAL (writeCommand) (buf, 2, tx, txlen) || (len = HAL (readResponse) (rx, rxspace, timeout)) < 1)
       return 0xFF;
+   nfcstatus = rx[0];
    rxlen = len;
    return rx[0];
 }
@@ -662,6 +677,7 @@ PN532RevK::release (unsigned int timeout)
    buf[1] = Tg1;
    if (HAL (writeCommand) (buf, 2) || HAL (readResponse) (buf, sizeof (buf), timeout) < 1)
       return 0xFF;
+   nfcstatus = *buf;
    Tg1 = 0;
    return buf[0];
 }
