@@ -816,13 +816,13 @@ ESPRevK::ESPRevK (const char *myappname, const char *myappversion, const char *m
    char host[100];
    snprintf_P (host, sizeof (host), PSTR ("%.*s-%s"), appnamelen, appname, hostname);
    debugf ("WiFi %s", host);
-   WiFi.persistent(false);
+   WiFi.persistent (false);
    WiFi.mode (WIFI_STA);
    wifi_station_set_hostname (host);
    WiFi.setAutoConnect (false); // On start
    WiFi.setAutoReconnect (false);       // On loss (we connect)
    wifidisconnecthandler = WiFi.onStationModeDisconnected (wifidisconnect);
-   sntp_set_timezone (timezone/3600);
+   sntp_set_timezone (timezone / 3600);
    if (ntphost)
       sntp_setservername (0, (char *) ntphost);
    WiFi.setSleepMode (WIFI_NONE_SLEEP); // We assume we have no power issues

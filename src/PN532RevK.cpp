@@ -8,7 +8,7 @@
 #define HAL(func)   (_interface->func)
 #define	nfctimeout	50      // Note the system has an internal timeout too, see begin function
 
-//#define	GETKEYVER // Get key version, will be needed when we do key roll over logic
+//#define       GETKEYVER // Get key version, will be needed when we do key roll over logic
 
 #ifdef REVKDEBUG
 void
@@ -198,12 +198,11 @@ PN532RevK::desfire_dx (byte cmd, unsigned int max, byte * data, unsigned int len
    // Pre process
    if (authenticated)
    {                            // We are authenticated
-      if (txenc=0xFF)
-      { // Append CMAC
-         desfire_cmac (data+len, len, data);
-	 len+=8;
-      }
-      else if (txenc)
+      if (txenc == 0xFF)
+      {                         // Append CMAC
+         desfire_cmac (data + len, len, data);
+         len += 8;
+      } else if (txenc)
       {                         // Encrypted sending (updates IV)
          if (txenc + ((len + 4 - txenc) | 15) + 1 > max)
             return -999;
@@ -343,9 +342,9 @@ PN532RevK::desfire (byte cmd, int len, byte * buf, unsigned int maxlen, String &
    if (l < 1)
    {
       byte status = buf[0];
-      sprintf_P ((char *) buf, "Failed cmd %02X status %02X (%d)", cmd, status, l);
+      snprintf_P ((char *) buf, maxlen, "Failed cmd %02X status %02X (%d)", cmd, status, l);
       err = String ((char *) buf);
-      buf[1] = status;
+      buf[0] = status;
    }
    return l + 1;
 }
@@ -379,24 +378,26 @@ key_left (byte * p)
 }
 
 // If a response is available to read
-uint8_t PN532RevK::available()
+uint8_t PN532RevK::available ()
 {
-	return _interface->available();
+   return _interface->available ();
 }
 
 // The time we have been waiting for a response (0 if not waiting)
-int32_t PN532RevK::waiting()
+int32_t PN532RevK::waiting ()
 {
-	return _interface->waiting();
+   return _interface->waiting ();
 }
 
-int8_t PN532RevK::ILPT()
+int8_t PN532RevK::ILPT ()
 {
-   uint8_t buf[3];
+   uint8_t
+      buf[3];
    buf[0] = 0x4A;               // InListPassiveTarget
    buf[1] = 2;                  // 2 tags (we only report 1)
    buf[2] = 0;                  // 106 kbps type A (ISO/IEC14443 Type A)
-   int timed = micros ();
+   int
+      timed = micros ();
    return HAL (writeCommand) (buf, 3);
 }
 
@@ -409,8 +410,9 @@ PN532RevK::getID (String & id, String & err, unsigned int timeout, byte * bid)
    err = String ();
    Tg1 = 0;
    uint8_t buf[128];
-      int timed = micros ();
-   if(!waiting())ILPT(); // We need to ask for the response.
+   int timed = micros ();
+   if (!waiting ())
+      ILPT ();                  // We need to ask for the response.
    int l = HAL (readResponse) (buf, sizeof (buf), timeout);     // Measured 48ms
    timed = micros () - timed;
    if (l < 6)
@@ -566,18 +568,27 @@ PN532RevK::desfire_log (String & err, int timeout)
    buf[9] = ci >> 8;
    buf[10] = ci;
    get_bcd_time (buf + 11);
-   int l = desfire (0x3B, 17, buf, sizeof (buf), err, timeout); // Measured 30ms
+   int l = desfire_dx (0x3B, sizeof (buf), buf, 18, 0xFF, 0, timeout);
    if (l < 0)
+   {
+      err = String ("Log fail");
       return l;
+   }
    buf[1] = 0x02;
    buf[2] = 1;                  // Credit 1
    buf[3] = 0;
    buf[4] = 0;
    buf[5] = 0;
-   l = desfire (0x0C, 5, buf, sizeof (buf), err, timeout);      // Measured 21ms
+   l = desfire_dx (0x0C, sizeof (buf), buf, 6, 0xFF, 0, timeout);
    if (l < 0)
+   {
+      err = String ("Counter fail");
       return l;
-   return desfire (0xC7, 0, buf, sizeof (buf), err, timeout);   // Measured 30ms
+   }
+   l = desfire_dx (0xC7, sizeof (buf), buf, 1, 0, 0, timeout);
+   if (l < 0)
+      err = String ("Commit fail");
+   return l;
 }
 
 uint32_t PN532RevK::desfire_fileset (String & err, int timeout)
@@ -592,7 +603,7 @@ uint32_t PN532RevK::desfire_fileset (String & err, int timeout)
       f = 0;
    while (l--)
       if (buf[1 + l] < 32)
-         f |= ((uint32_t)1 << buf[1 + l]);
+         f |= ((uint32_t) 1 << buf[1 + l]);
    return f;
 }
 
