@@ -85,6 +85,7 @@ class PN532RevK
     uint32_t desfire_fileset(String & err, int timeout=0); // Get file numbers (0-31) as bit map
     int32_t desfire_filesize(uint8_t fn,String & err, int timeout=0); // get file size or record size
     int32_t desfire_fileread(uint8_t fn, uint32_t offset, uint32_t len, uint32_t bufsize,byte *buf, String & err, int timeout=0); // get file data
+    byte atr[20]; // ATR of last card starting length (includes length)
 
   private:
     PN532Interface *_interface;
