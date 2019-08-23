@@ -43,6 +43,12 @@ uint32_t PN532RevK::begin (byte p3, unsigned int timeout)
 
    uint8_t
       buf[8];
+   buf[0] = 0x14;               // SAMConfiguration (first as gets out of VLowBat mode)
+   buf[1] = 0x01;               // Normal
+   buf[2] = 20;                 // *50ms timeout
+   buf[3] = 0x01;               // Use IRQ
+   if (HAL (writeCommand) (buf, 4) || HAL (readResponse) (buf, sizeof (buf), timeout) < 0)
+      return 0;
    buf[0] = 0x02;               // GetFirmwareVersion
    if (HAL (writeCommand) (buf, 1) || HAL (readResponse) (buf, sizeof (buf), timeout) < 4)
       return 0;
@@ -54,12 +60,6 @@ uint32_t PN532RevK::begin (byte p3, unsigned int timeout)
    buf[3] = 0x01;               // MxRtyPSL (default = 0x01)
    buf[4] = 0x01;               // MxRtyPassiveActivation (default 0xFF)
    if (HAL (writeCommand) (buf, 5) || HAL (readResponse) (buf, sizeof (buf), timeout) < 0)
-      return 0;
-   buf[0] = 0x14;               // SAMConfiguration
-   buf[1] = 0x01;               // Normal
-   buf[2] = 20;                 // *50ms timeout
-   buf[3] = 0x01;               // Use IRQ
-   if (HAL (writeCommand) (buf, 4) || HAL (readResponse) (buf, sizeof (buf), timeout) < 0)
       return 0;
    buf[0] = 0x08;               // WriteRegister
    buf[1] = 0xFF;               // P3CFGB
